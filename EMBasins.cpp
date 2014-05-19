@@ -156,7 +156,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
 //    writeOutputMatrix(3, basin_obj.sample(100000), N,100000, plhs);
     */
 
-    /*
+    
     // Hidden Markov model
     HMM<BasinType> basin_obj(st, unobserved_edges_low, unobserved_edges_high, binsize, nbasins);
     vector<double> logli = basin_obj.train(niter);
@@ -188,9 +188,9 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     writeOutputMatrix(7, basin_obj.sample(100000), N,100000, plhs);
 //    writeOutputMatrix(7, basin_obj.word_list(), N, hist.size(), plhs);
 //    writeOutputMatrix(6, basin_obj.stationary_prob(), 1,nbasins, plhs);
-    */
     
     
+    /*
     // Mixture model
     cout << "Initializing EM..." << endl;
     EMBasins<BasinType> basin_obj(st, binsize, nbasins);
@@ -223,7 +223,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     writeOutputMatrix(6, logli, niter, 1, plhs);
 //    writeOutputMatrix(6, P_test, nbasins, P_test.size()/nbasins, plhs);
     
-    
+    */
     
     /*
     // k-fold cross-validation
