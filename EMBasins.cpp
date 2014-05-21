@@ -222,8 +222,8 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     writeOutputMatrix(5, basin_obj.all_prob(), nstates, 1, plhs);
     writeOutputMatrix(6, logli, niter, 1, plhs);
 //    writeOutputMatrix(6, P_test, nbasins, P_test.size()/nbasins, plhs);
-    
     */
+    
     
     /*
     // k-fold cross-validation
@@ -979,7 +979,8 @@ vector<double> HMM<BasinT>::train(int niter) {
 
 
         //        double alpha = (i<niter/2) ? 1 - (double)i/(niter/2) : 0;
-        double alpha = 0.00002;
+//        double alpha = 0.00002;
+        double alpha = 0;
 //        if (i >= niter/2) {
 //            alpha = 0.002 + (1-0.002)*exp(-(double) (i-niter/2) * (10.0/(((double)(niter/2)-1))));
 //        }
