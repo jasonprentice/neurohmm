@@ -60,7 +60,7 @@ void writeOutputStruct(int pos, vector<paramsStruct>& value, mxArray**& plhs) {
 }
 
 
-vector<double> mpow(vector<double>& matrix, int n, int k) {
+vector<double> mpow(const vector<double>& matrix, int n, int k) {
 
     if (k==1) {
         return matrix;
@@ -159,7 +159,9 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     
     // Hidden Markov model
     HMM<BasinType> basin_obj(st, unobserved_edges_low, unobserved_edges_high, binsize, nbasins);
-    vector<double> logli = basin_obj.train(niter);
+    bool ret_train_logli = false;
+    vector<double> logli = basin_obj.train(niter, ret_train_logli);
+
     cout << "Viterbi..." << endl;
     vector<int> alpha = basin_obj.viterbi(2);
     cout << "P...." << endl;
@@ -193,10 +195,11 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     /*
     // Mixture model
     cout << "Initializing EM..." << endl;
-    EMBasins<BasinType> basin_obj(st, binsize, nbasins);
+    EMBasins<BasinType> basin_obj(st, unobserved_edges_low, unobserved_edges_high, binsize, nbasins);
         
     cout << "Training model..." << endl;
-    vector<double> logli = basin_obj.train(niter);
+    bool ret_train_logli = false;
+    vector<double> logli = basin_obj.train(niter, ret_train_logli);
     //vector<double> test_logli = basin_obj.test_logli;
     
 //    cout << "Testing..." << endl;
@@ -222,8 +225,8 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     writeOutputMatrix(5, basin_obj.all_prob(), nstates, 1, plhs);
     writeOutputMatrix(6, logli, niter, 1, plhs);
 //    writeOutputMatrix(6, P_test, nbasins, P_test.size()/nbasins, plhs);
-    */
     
+    */
     
     /*
     // k-fold cross-validation
@@ -246,7 +249,7 @@ RNG::RNG() {
 RNG::~RNG() {
     gsl_rng_free(rng_pr);
 }
-int RNG::discrete(const vector<double>& p) {
+int RNG::discrete(const vector<double>& p) const {
     double u = gsl_rng_uniform(rng_pr);
     double c = p[0];
     int ix=0;
@@ -256,14 +259,14 @@ int RNG::discrete(const vector<double>& p) {
     }
     return ix;
 }
-bool RNG::bernoulli(double p) {
+bool RNG::bernoulli(double p) const {
     return (gsl_rng_uniform(rng_pr) < p);
 }
-double RNG::uniform() {
+double RNG::uniform() const {
     return (gsl_rng_uniform(rng_pr));
 }
 
-vector<int> RNG::randperm(int nmax) {
+vector<int> RNG::randperm(int nmax) const {
     vector<int> nvals (nmax);
     for (int i=0; i<nmax; i++) {
         nvals[i] = i;
@@ -288,21 +291,31 @@ EMBasins<BasinT>::EMBasins(int N, int nbasins) : N(N), nbasins(nbasins), w(nbasi
 
 
 template <class BasinT>
-EMBasins<BasinT>::EMBasins(vector<vector<double> >& st, double binsize, int nbasins) : nbasins(nbasins), nsamples(0), w(nbasins) {
+EMBasins<BasinT>::EMBasins(vector<vector<double> >& st, vector<double> unobserved_l, vector<double> unobserved_u,double binsize, int nbasins) : N( st.size() ), nbasins(nbasins), nsamples(0), w(nbasins) {
     
     rng = new RNG();
     srand(time(NULL));
     
-    N = st.size();
+    //N = st.size();
     //srand(time(NULL));
     //srand(0);
 
+    for (vector<double>::iterator it = unobserved_l.begin(); it != unobserved_l.end(); ++it) {
+        *it = floor(*it / binsize);
+    }
+    for (vector<double>::iterator it = unobserved_u.begin(); it != unobserved_u.end(); ++it) {
+        *it = floor(*it / binsize);
+    }
     
+
     // Build state structure from spike times in st:
     cout << "Building state histogram..." << endl;
     // Dump all the spikes into a vector and sort by spike time
     
     vector<Spike> all_spikes = sort_spikes(st, binsize);
+    T = all_spikes.back().bin;
+    
+    vector<string> words (T,"");
     
     string silent_str (N,'0');
 
@@ -313,8 +326,8 @@ EMBasins<BasinT>::EMBasins(vector<vector<double> >& st, double binsize, int nbas
     this_state.P.assign(nbasins, 0);
     this_state.weight.assign(nbasins, 0);
     this_state.word.assign(N,0);
-    all_states.insert(pair<string,State> (silent_str,this_state));
-    test_states.insert(pair<string,State> (silent_str,this_state));
+    train_states.insert(pair<string,State> (silent_str,this_state));
+//    test_states.insert(pair<string,State> (silent_str,this_state));
     
     int curr_bin = 0;
     for (vector<Spike>::iterator it=all_spikes.begin(); it!=all_spikes.end(); ++it) {
@@ -322,23 +335,48 @@ EMBasins<BasinT>::EMBasins(vector<vector<double> >& st, double binsize, int nbas
         int next_bin = it->bin;
         int next_cell = it->neuron_ind;
       
+        bool bin_observed = true;
+        for (int n=0; n<unobserved_l.size(); n++) {
+            if (curr_bin >= unobserved_l[n] && curr_bin < unobserved_u[n]) {
+                bin_observed = false;
+                break;
+            }
+        }
+
         if (next_bin > curr_bin) {
-            // Add new state; if it's already been discovered increment its frequency
-            this_state.active_constraints = BasinT::get_active_constraints(this_state);
 
             raster.push_back(this_str);
-            
-            
-            pair<state_iter, bool> ins = all_states.insert(pair<string,State> (this_str,this_state));
-            if (!ins.second) {
-                (((ins.first)->second).freq)++;
+            if (bin_observed) {
+                // Add new state; if it's already been discovered increment its frequency
+                this_state.active_constraints = BasinT::get_active_constraints(this_state);
+                
+                pair<state_iter, bool> ins = train_states.insert(pair<string,State> (this_str,this_state));
+                if (!ins.second) {
+                    (((ins.first)->second).freq)++;
+                }
+                
+            }
+            // Update probabilities of time bins [curr_bin, next_bin)
+            words[curr_bin] = this_str;
+            for (int n=curr_bin+1; n<next_bin; n++) {
+                words[n] = silent_str;
             }
 
             // All states between curr_bin and next_bin (exclusive) are silent; update frequency of silent state accordingly
-            for (int i=0; i<(next_bin-curr_bin-1); i++) {
+            for (int t=curr_bin+1; t<next_bin; t++) {
+                bool t_observed = true;
+                for (int n=0; n<unobserved_l.size(); n++) {
+                    if (t >= unobserved_l[n] && t < unobserved_u[n]) {
+                        t_observed = false;
+                        break;
+                    }
+                }
+                if (t_observed) {
+                    (train_states[silent_str].freq)++;
+                }
                 raster.push_back(silent_str);
             }
-            all_states[silent_str].freq += (next_bin - curr_bin - 1);
+
         
             // Reset state and jump to next bin
             this_str = silent_str;
@@ -359,17 +397,37 @@ EMBasins<BasinT>::EMBasins(vector<vector<double> >& st, double binsize, int nbas
         }
         
     }
-    if (all_states[silent_str].freq == 0) {
-        all_states.erase(silent_str);
+    if (train_states[silent_str].freq == 0) {
+        train_states.erase(silent_str);
     }
     
-    // Now all_states contains all states found in the data together with their frequencies.
+    // Now train_states contains all states found in the data together with their frequencies.
     
-    for (state_iter it=all_states.begin(); it!=all_states.end(); ++it) {
+    
+    int identifier = 0;
+    for (state_iter it = train_states.begin(); it != train_states.end(); ++it) {
         nsamples += (it->second).freq;
+        (it->second).identifier = identifier;
+        identifier++;
     }
     
-    train_states = all_states;
+    state_list.assign(T, NULL);
+    for (int t=0; t<T; t++) {
+        bool t_observed = true;
+        for (int n=0; n<unobserved_l.size(); n++) {
+            if (t >= unobserved_l[n] && t < unobserved_u[n]) {
+                t_observed = false;
+                break;
+            }
+        }
+        if (t_observed) {
+            State& this_state = train_states.at(words[t]);
+            state_list[t] = &this_state;
+        } else {
+            state_list[t] = 0;
+        }
+    }
+
 };
 
 template <class BasinT>
@@ -377,86 +435,7 @@ EMBasins<BasinT>::~EMBasins() {
     delete rng;
 }
 
-
-template <class BasinT>
-vector<double> EMBasins<BasinT>::test(const vector<vector<double> >& st, double binsize) {
-    
-    vector<Spike> all_spikes = sort_spikes(st,binsize);
-    int max_bin = all_spikes.back().bin;
-    
-    vector<double> P_test(nbasins*max_bin);
-    map<string, State> eval_states;
-    
-    
-    string silent_str (N,'0');
-    
-    // Add silent state with frequency of zero
-    State this_state;
-    string this_str = silent_str;
-    this_state.freq = 0;
-    this_state.P.assign(nbasins, 0);
-    this_state.weight.assign(nbasins,0);
-    this_state.word.assign(N,0);
-
-    set_state_P(this_state);
-    eval_states.insert(pair<string,State> (silent_str,this_state));
-    
-    int curr_bin = 0;
-    for (vector<Spike>::iterator it=all_spikes.begin(); it!=all_spikes.end(); ++it) {
-        
-        int next_bin = it->bin;
-        int next_cell = it->neuron_ind;
-        
-        if (next_bin > curr_bin) {
-            // Add new state; if it's already been discovered increment its frequency
-            this_state.active_constraints = BasinT::get_active_constraints(this_state);
-            set_state_P(this_state);
-            pair<state_iter, bool> ins = eval_states.insert(pair<string,State> (this_str,this_state));
-            if (!ins.second) {
-                (((ins.first)->second).freq)++;
-            }
-            
-            
-            // Update probabilities of time bins [curr_bin, next_bin)
-            for (int i=0; i<nbasins; i++) {
-                P_test[nbasins*curr_bin + i] = this_state.P[i];
-                for (int n=curr_bin+1; n<next_bin; n++) {
-                    P_test[nbasins*n + i] = eval_states[silent_str].P[i];
-                }
-            }
-            
-            // All states between curr_bin and next_bin (exclusive) are silent; update frequency of silent state accordingly
-            eval_states[silent_str].freq += (next_bin - curr_bin - 1);
-            
-            
-            // Reset state and jump to next bin
-            this_str = silent_str;
-            this_state.freq = 1;
-            this_state.on_neurons.clear();
-            this_state.P.assign(nbasins,0);
-            this_state.weight.assign(nbasins,0);
-            this_state.word.assign(N,0);
-            
-            curr_bin = next_bin;
-        }
-        
-        // Add next_cell to this_state
-        if (this_state.word[next_cell] == 0) {  // Don't want to count a cell twice in one bin
-            this_str[next_cell] = '1';
-            this_state.on_neurons.push_back(next_cell);
-            this_state.word[next_cell] = 1;
-        }
-        
-    }
-    if (all_states[silent_str].freq == 0) {
-        all_states.erase(silent_str);
-    }
-    
-    return P_test;
-
-}
-
-
+/*
 template <class BasinT>
 vector<double> EMBasins<BasinT>::crossval(int niter, int k) {
     int blocksize = floor(raster.size() / k);
@@ -469,7 +448,7 @@ vector<double> EMBasins<BasinT>::crossval(int niter, int k) {
         test_states.clear();
         for (int t=0; t<tperm.size(); t++) {
             string this_str = raster[tperm[t]];
-            State this_state = all_states[this_str];
+            State this_state = train_states[this_str];
             this_state.freq = 1;
             map<string, State>& curr_map = (t < i*blocksize || t >= (i+1)*blocksize)
                                             ? train_states : test_states;
@@ -488,60 +467,73 @@ vector<double> EMBasins<BasinT>::crossval(int niter, int k) {
     }
     return all_logli;
 }
-
+*/
 template <class BasinT>
-vector<double> EMBasins<BasinT>::train(int niter) {
+vector<double> EMBasins<BasinT>::train(int niter, bool ret_train_logli) {
 
-    cout << "Initializing EM params..." << endl;
-    w.assign(nbasins,1/(double)nbasins);
-    basins.clear();
-    // Initialize each basin model
-    basins.push_back(BasinT(N,0,rng,0.45));
-    for (int i=1; i<nbasins; i++) {
-        //        BasinT this_basin  BasinT(N));
-        basins.push_back(BasinT(N,i,rng,0.45));
-    }
+    initParams();
 
-    update_P();
-
-    test_logli.assign(niter,0);
-    vector<double> logli (niter);
+    vector<double> train_logli (niter);
     for (int i=0; i<niter; i++) {
         cout << "Iteration " << i << endl;
 
-        // E step
-
-        for (int j=0; j<nbasins; j++) {
-            basins[j].reset_stats();
-        }
-        
-        for (state_iter it = train_states.begin(); it!=train_states.end(); ++it) {
-            for (int j=0; j<nbasins; j++) {
-                basins[j].increment_stats(it->second);
-            }
-        }
-        for (int j=0; j<nbasins; j++) {
-            basins[j].normalize_stats();
-        }
-        
-        // M step
-//        double alpha = (i<niter/2) ? 1 - (double)i/(niter/2) : 0;
-        double alpha = 0.002;
-//        if (i >= niter/2) {
-//            alpha = 0.002 + (1-0.002)*exp(-(double) (i-niter/2) * (10.0/(((double)(niter/2)-1))));
-//        }
-//        cout << alpha << endl;
-        for (int j=0; j<nbasins; j++) {
-
-            basins[j].doMLE(alpha);
-        }
-        update_w();
-
-        logli[i] = update_P();
-        test_logli[i] = update_P_test();
+        Estep();
+        Mstep();
+     
+//        logli[i] = update_P();
+//        test_logli[i] = update_P_test();
+        train_logli[i] = logli(ret_train_logli);
     }
-//    return test_logli;
-    return logli;
+    return train_logli;
+}
+
+template <class BasinT>
+void EMBasins<BasinT>::initParams() {
+    w.assign(nbasins,1/(double)nbasins);
+    basins.clear();
+    // Initialize each basin model
+    for (int i=0; i<nbasins; i++) {
+        basins.push_back(BasinT(N,i,rng,0.45));
+    }
+
+    return;
+}
+
+template <class BasinT>
+void EMBasins<BasinT>::Estep() {
+    update_P();
+    return;
+}
+
+
+template <class BasinT>
+void EMBasins<BasinT>::Mstep() {
+    for (int j=0; j<nbasins; j++) {
+        basins[j].reset_stats();
+    }
+    
+    for (state_iter it = train_states.begin(); it!=train_states.end(); ++it) {
+        for (int j=0; j<nbasins; j++) {
+            basins[j].increment_stats(it->second);
+        }
+    }
+    for (int j=0; j<nbasins; j++) {
+        basins[j].normalize_stats();
+    }
+    
+    double alpha = 0.002;
+    //        if (i >= niter/2) {
+    //            alpha = 0.002 + (1-0.002)*exp(-(double) (i-niter/2) * (10.0/(((double)(niter/2)-1))));
+    //        }
+    //        cout << alpha << endl;
+    for (int j=0; j<nbasins; j++) {
+        
+        basins[j].doMLE(alpha);
+    }
+    update_w();
+
+    
+    return;
 }
 
 template <class BasinT>
@@ -553,51 +545,89 @@ void EMBasins<BasinT>::update_w() {
     return;
 }
 
+
 template <class BasinT>
-double EMBasins<BasinT>::update_P() {
-    
-    double logli = 0;
-    double norm = 0;
+void EMBasins<BasinT>::update_P() {
     for (state_iter it=train_states.begin(); it != train_states.end(); ++it) {
         State& this_state = it->second;
-        double Z = set_state_P(this_state);        
-        double delta = log(Z) - logli;
-        double f = this_state.freq;
-        norm += f;
-        logli += (f*delta)/norm;
+        double Z = 0;
+        for (int i=0; i<nbasins; i++) {
+            this_state.P[i] = basins[i].P_state(this_state);
+            Z += w[i] * this_state.P[i];
+        }
+        for (int i=0; i<nbasins; i++) {
+            this_state.weight[i] = this_state.freq * w[i] * this_state.P[i] / Z;
+        }
+        this_state.pred_prob = Z;
     }
-    return logli;
-    
+    return;
 }
+
+
+template<class BasinT>
+State EMBasins<BasinT>::state_obs(int obs, int t) const {
+    // obs = 0:     test only
+    // obs = 1:     train only
+    // obs = 2:     all
+    
+    if (state_list[t] && (obs==1 || obs==2)) {
+        return *state_list[t];
+    } else if (!state_list[t] && (obs==0 || obs==2)) {
+      
+        State this_state;
+        this_state.word.assign(this->N, 0);
+        for (int n=0; n<this->N; n++) {
+            if ((this->raster[t])[n] == '1') {
+                this_state.on_neurons.push_back(n);
+                this_state.word[n] = 1;
+            }
+        }
+        
+        vector<double> emiss (this->nbasins, 1);
+        for (int k=0; k<this->nbasins; k++) {
+            emiss[k] = (this->basins)[k].P_state(this_state);
+        }
+        this_state.P = emiss;
+        this_state.identifier = 0;
+        return this_state;
+    }
+    return State();
+}
+
+template<class BasinT>
+vector<double> EMBasins<BasinT>::emiss_obs(int obs, int t) const {
+    
+    State this_state = state_obs(obs, t);
+    if (this_state.identifier == -1) {
+        return vector<double> (this->nbasins,1);
+    } else {
+        return this_state.P;
+    }
+}
+
 
 template <class BasinT>
-double EMBasins<BasinT>::update_P_test() {
+double EMBasins<BasinT>::logli(bool obs) const {
     
     double logli = 0;
-    double norm = 0;
-    double norm2 = 0;
-    double S = 0;
-    double Dkl = 0;
-    for (state_iter it=test_states.begin(); it != test_states.end(); ++it) {
-        State& this_state = it->second;
-        double Z = set_state_P(this_state);
-        double delta = log2(Z) - logli;
-        double f = this_state.freq;
-        norm += f;
-        if (f >= 1) {
-            norm2 += f;
-            logli += (f*delta)/norm;
-            S += f * log2(f);
-            Dkl += f * log2(f/Z);
+    int nsamp = 0;
+    for (int t=0; t<T; t++) {
+        State this_state = state_obs(obs, t);
+        if (this_state.identifier != -1) {
+            if (this_state.pred_prob == -1) {
+                this_state.pred_prob = 0;
+                for (int k=0; k<nbasins; k++) {
+                    this_state.pred_prob += w[k] * this_state.P[k];
+                }
+            }
+            double delta = log(this_state.pred_prob) - logli;
+            nsamp++;
+            logli += delta / nsamp;
         }
     }
-    Dkl = (Dkl - norm2*log2(norm))/norm;
-    S = (S/norm - log2(norm));
-//    return Dkl;
-    return logli;
     
+    return logli;
 }
-
 
 
 template <class BasinT>
@@ -612,6 +642,7 @@ vector<unsigned long> EMBasins<BasinT>::state_hist() const {
     return hist;
 }
 
+/*
 template <class BasinT>
 vector<unsigned long> EMBasins<BasinT>::test_hist() const {
     vector<unsigned long> hist (test_states.size(), 0);
@@ -623,7 +654,7 @@ vector<unsigned long> EMBasins<BasinT>::test_hist() const {
     }
     return hist;
 }
-
+*/
 template <class BasinT>
 vector<double> EMBasins<BasinT>::all_prob() const {
     vector<double> prob (train_states.size(), 0);
@@ -637,6 +668,7 @@ vector<double> EMBasins<BasinT>::all_prob() const {
     
 }
 
+/*
 template <class BasinT>
 vector<double> EMBasins<BasinT>::test_prob() const {
     vector<double> prob (test_states.size(), 0);
@@ -649,6 +681,7 @@ vector<double> EMBasins<BasinT>::test_prob() const {
     return prob;
     
 }
+*/
 
 template <class BasinT>
 vector<double> EMBasins<BasinT>::P() const {
@@ -658,7 +691,7 @@ vector<double> EMBasins<BasinT>::P() const {
         const State& this_state = it->second;
         
         for (int i=0; i<nbasins; i++) {
-            P[pos*nbasins + i] = this_state.P[i];
+            P[pos*nbasins + i] = (w[i] * this_state.P[i]) / this_state.pred_prob;
         }
         pos++;
     }
@@ -707,20 +740,7 @@ vector<Spike> EMBasins<BasinT>::sort_spikes(const vector<vector<double> >& st, d
 }
 
 
-template <class BasinT>
-double EMBasins<BasinT>::set_state_P(State& this_state) {
-    double Z = 0;
-    for (int i=0; i<nbasins; i++) {
-        this_state.P[i] = w[i] * basins[i].P_state(this_state);
-        Z += this_state.P[i];
-    }
-    for (int i=0; i<nbasins; i++) {
-        this_state.P[i] /= Z;
-        this_state.weight[i] = this_state.freq * this_state.P[i];
-    }
-    this_state.pred_prob = Z;
-    return Z;
-}
+
 
 template <class BasinT>
 vector<char> EMBasins<BasinT>::word_list() {
@@ -740,172 +760,33 @@ vector<char> EMBasins<BasinT>::word_list() {
 // ************* HMM **********************
 
 template <class BasinT>
-HMM<BasinT>::HMM(vector<vector<double> >& st, vector<double> unobserved_l, vector<double> unobserved_u, double binsize, int nbasins) : EMBasins<BasinT> (st.size(),nbasins), w0 (nbasins) {
-    
-    
-    // Build state structure from spike times in st:
-    cout << "Building state histogram..." << endl;
-    // Dump all the spikes into a vector and sort by spike time
-    
-    for (vector<double>::iterator it = unobserved_l.begin(); it != unobserved_l.end(); ++it) {
-        *it = floor(*it / binsize);
-    }
-    for (vector<double>::iterator it = unobserved_u.begin(); it != unobserved_u.end(); ++it) {
-        *it = floor(*it / binsize);
-    }
-    
-    vector<Spike> all_spikes = this->sort_spikes(st, binsize);
-    T = all_spikes.back().bin;
-    
-    forward.assign(T*nbasins, 0);
-    backward.assign(T*nbasins, 0);
-    trans.assign(nbasins*nbasins, 0);
-//    words.assign(T, "");
-    vector<string> words (T, "");
-        
-    
-    string silent_str (this->N,'0');
-    
-    // Add silent state with frequency of zero
-    State this_state;
-    string this_str = silent_str;
-    this_state.freq = 0;
-    this_state.P.assign(nbasins, 0);
-    this_state.weight.assign(nbasins, 0);
-    this_state.word.assign(this->N,0);
-    this->all_states.insert(pair<string,State> (silent_str,this_state));
-//    test_states.insert(pair<string,State> (silent_str,this_state));
-    
-    int curr_bin = 0;
-    for (vector<Spike>::iterator it=all_spikes.begin(); it!=all_spikes.end(); ++it) {
-        
-        int next_bin = it->bin;
-        int next_cell = it->neuron_ind;
-        
-        bool bin_observed = true;
-        for (int n=0; n<unobserved_l.size(); n++) {
-            if (curr_bin >= unobserved_l[n] && curr_bin < unobserved_u[n]) {
-                bin_observed = false;
-                break;
-            }
-        }
-        
-        if (next_bin > curr_bin) {
-            this->raster.push_back(this_str);
-            if (bin_observed) {
-                // Add new state; if it's already been discovered increment its frequency
-                this_state.active_constraints = BasinT::get_active_constraints(this_state);
-                
-                pair<state_iter, bool> ins = this->all_states.insert(pair<string,State> (this_str,this_state));
-                if (!ins.second) {
-                    (((ins.first)->second).freq)++;
-                }
-            
-            }
-            // Update probabilities of time bins [curr_bin, next_bin)
-            words[curr_bin] = this_str;
-            for (int n=curr_bin+1; n<next_bin; n++) {
-                words[n] = silent_str;
-            }
-            
-            // All states between curr_bin and next_bin (exclusive) are silent; update frequency of silent state accordingly
-//            for (int i=0; i<(next_bin-curr_bin-1); i++) {
-//                this->raster.push_back(silent_str);
-//            }
-//            this->all_states[silent_str].freq += (next_bin - curr_bin - 1);
-            for (int t=curr_bin+1; t<next_bin; t++) {
-                bool t_observed = true;
-                for (int n=0; n<unobserved_l.size(); n++) {
-                    if (t >= unobserved_l[n] && t < unobserved_u[n]) {
-                        t_observed = false;
-                        break;
-                    }
-                }
-                if (t_observed) {
-                    (this->all_states[silent_str].freq)++;
-                }
-                this->raster.push_back(silent_str);
-            }
-            
-            // Reset state and jump to next bin
-            this_str = silent_str;
-            this_state.freq = 1;
-            this_state.on_neurons.clear();
-            this_state.P.assign(nbasins,0);
-            this_state.weight.assign(nbasins,0);
-            this_state.word.assign(this->N,0);
-            
-            curr_bin = next_bin;
-        }
-        
-        // Add next_cell to this_state
-        if (this_state.word[next_cell] == 0) {  // Don't want to count a cell twice in one bin
-            this_str[next_cell] = '1';
-            this_state.on_neurons.push_back(next_cell);
-            this_state.word[next_cell] = 1;
-        }
-        
-    }
-    if (this->all_states[silent_str].freq == 0) {
-        this->all_states.erase(silent_str);
-    }
-    
-    // Now all_states contains all states found in the data together with their frequencies.
-    
-    int identifier = 0;
-    for (state_iter it=this->all_states.begin(); it!=this->all_states.end(); ++it) {
-        this->nsamples += (it->second).freq;
-        (it->second).identifier = identifier;
-        identifier++;
-    }
-    
-    this->train_states = this->all_states;
-    
-    state_list.assign(T, NULL);
-    for (int t=0; t<T; t++) {
-        bool t_observed = true;
-        for (int n=0; n<unobserved_l.size(); n++) {
-            if (t >= unobserved_l[n] && t < unobserved_u[n]) {
-                t_observed = false;
-                break;
-            }
-        }
-        if (t_observed) {
-            State& this_state = this->train_states.at(words[t]);
-            state_list[t] = &this_state;
-        } else {
-            state_list[t] = 0;
-        }
-    }
-    
-    
-    // Cross validation:
-    //tskip = 2;
-    
-    // Full:
-    tskip = 1;
-
-}
+HMM<BasinT>::HMM(vector<vector<double> >& st, vector<double> unobserved_l, vector<double> unobserved_u, double binsize, int nbasins) : EMBasins<BasinT> (st, unobserved_l, unobserved_u, binsize, nbasins),
+                            forward(this->T * nbasins,0),
+                            backward(this->T * nbasins,0),
+                            trans(this->T*nbasins,0),
+                            w0 (nbasins) {}
 
 template <class BasinT>
-vector<int> HMM<BasinT>::state_v_time() {
-    vector<int> states (T);
-    for (int t=0; t<T; t++) {
-        states[t] = state_list[t]->identifier;
+vector<int> HMM<BasinT>::state_v_time() const {
+    vector<int> states (this->T,-1);
+    for (int t=0; t<this->T; t++) {
+        if (this->state_list[t]) {
+            states[t] = this->state_list[t]->identifier;
+        }
     }
     return states;
 }
                       
 template <class BasinT>
-vector<double> HMM<BasinT>::emiss_prob() {
-    vector<double> emiss (this->nbasins * T);
-    for (int t=0; t<T; t++) {
+vector<double> HMM<BasinT>::emiss_prob() const {
+    vector<double> emiss (this->nbasins * this->T);
+    for (int t=0; t<this->T; t++) {
 //        State& this_state = this->train_states[words[t]];
 //        State& this_state = *(state_list[t]);
         for (int i=0; i<this->nbasins; i++) {
 //            emiss[t*this->nbasins + i] = this->basins[i].P_state(this_state);
-            if (state_list[t]) {
-                emiss[t*this->nbasins + i] = (state_list[t]->P)[i];
+            if (this->state_list[t]) {
+                emiss[t*this->nbasins + i] = (this->state_list[t]->P)[i];
             } else {
                 emiss[t*this->nbasins + i] = 1;
             }
@@ -915,218 +796,121 @@ vector<double> HMM<BasinT>::emiss_prob() {
 }
 
 template <class BasinT>
-vector<double> HMM<BasinT>::get_forward() {
+vector<double> HMM<BasinT>::get_forward() const {
     return forward;
 }
 
 template <class BasinT>
-vector<double> HMM<BasinT>::get_backward() {
+vector<double> HMM<BasinT>::get_backward() const {
     return backward;
 }
 
 template <class BasinT>
-vector<double> HMM<BasinT>::train(int niter) {
-    
-    cout << "Initializing EM params..." << endl;
-    
-    w0.assign(this->nbasins, 1/(double)this->nbasins);
-    trans.assign(this->nbasins*this->nbasins, 1/(double)this->nbasins);
-    this->basins.clear();
-    // Initialize each basin model
-    this->basins.push_back(BasinT(this->N,0,this->rng,0.45));
-    for (int i=1; i<this->nbasins; i++) {
-        //        BasinT this_basin  BasinT(N));
-        this->basins.push_back(BasinT(this->N,i,this->rng,0.45));
-    }
-    
-    
-//    test_logli.assign(niter,0);
+vector<double> HMM<BasinT>::train(int niter, bool ret_train_logli) {
+    this->initParams();
+
     vector<double> train_logli (niter);
-    vector<double> test_logli (niter);
     for (int i=0; i<niter; i++) {
         cout << "Iteration " << i << endl;
         
-        // E step
-        // Initialize emission probabilities
-        for (state_iter it=this->train_states.begin(); it != this->train_states.end(); ++it) {
-            State& this_state = it->second;
-            for (int i=0; i<this->nbasins; i++) {
-                this_state.P[i] = this->basins[i].P_state(this_state);
-            }
-        }
-        cout << "forward" << endl;
-        update_forward();
-        cout << "backward" << endl;
-        update_backward();
-        cout << "P" << endl;
-        update_P();
-        
-        // M step
+        this->Estep();
+        this->Mstep();
 
-        for (int j=0; j<this->nbasins; j++) {
-            this->basins[j].reset_stats();
-        }
-        
-        for (state_iter it = this->train_states.begin(); it!=this->train_states.end(); ++it) {
-            for (int j=0; j<this->nbasins; j++) {
-                this->basins[j].increment_stats(it->second);
-            }
-        }
-        for (int j=0; j<this->nbasins; j++) {
-            this->basins[j].normalize_stats();
-        }
-        
-
-
-        //        double alpha = (i<niter/2) ? 1 - (double)i/(niter/2) : 0;
-//        double alpha = 0.00002;
-        double alpha = 0;
-//        if (i >= niter/2) {
-//            alpha = 0.002 + (1-0.002)*exp(-(double) (i-niter/2) * (10.0/(((double)(niter/2)-1))));
-//        }
-        //        cout << alpha << endl;
-        for (int j=0; j<this->nbasins; j++) {
-            
-            this->basins[j].doMLE(alpha);
-        }
-        
-//        cout << "forward" << endl;
-//        update_forward();
-//        cout << "backward" << endl;
-//        update_backward();
-        cout << "trans" << endl;
-        update_trans();
-
-//        cout << "P" << endl;
-//        update_P();
-
-        cout << "logli" <<endl;
-        train_logli[i] = logli(true);
-//        test_logli[i] = logli(false);
-        //test_logli[i] = update_P_test();
+        train_logli[i] = logli(ret_train_logli);
     }
-//    return test_logli;
     return train_logli;
 }
 
+template <class BasinT>
+void HMM<BasinT>::initParams() {
+    this->basins.clear();
+    // Initialize each basin model
+    for (int i=0; i<this->nbasins; i++) {
+        this->basins.push_back(BasinT(this->N,i,this->rng,0.45));
+    }
+
+    
+    w0.assign(this->nbasins, 1/(double)this->nbasins);
+    trans.assign(this->nbasins*this->nbasins, 1/(double)this->nbasins);
+    return;
+}
 
 template <class BasinT>
-void HMM<BasinT>::forward_backward() {
-    
-    // Forward pass
-    vector<double> norm (T,0);
-    for (int n=0; n<this->nbasins; n++) {
-        backward[n] = w0[n];
-    }
-    norm[0] = 1;
-    for (int t=1; t<T; t++) {
-        //        State& this_state = this->train_states.at(words[t-1]);
-//        double norm = 0;
-        for (int n=0; n<this->nbasins; n++) {
-            backward[this->nbasins*t + n] = 0;
-            for (int m=0; m<this->nbasins; m++) {
-                if (state_list[t-1]) {
-                    backward[this->nbasins*t + n] += (state_list[t-1]->P)[m] * trans[m*this->nbasins+n] * backward[(t-1)*this->nbasins + m];
-                } else {
-                    backward[this->nbasins*t + n] += trans[m*this->nbasins+n] * backward[(t-1)*this->nbasins + m];
-                    
-                }
-            }
-            norm[t] += backward[this->nbasins*t + n];
-        }
-        for (int n=0; n<this->nbasins; n++) {
-            backward[this->nbasins*t+n] /= norm[t];
+void HMM<BasinT>::Estep() {
+
+    for (state_iter it=this->train_states.begin(); it != this->train_states.end(); ++it) {
+        State& this_state = it->second;
+        for (int i=0; i<this->nbasins; i++) {
+            this_state.P[i] = this->basins[i].P_state(this_state);
         }
     }
+
+    update_forward();
+    update_backward();
+    update_P();
     
-    // Backward pass
+    return;
+}
+
+template <class BasinT>
+void HMM<BasinT>::Mstep() {
+
+    for (int j=0; j<this->nbasins; j++) {
+        this->basins[j].reset_stats();
+    }
     
+    for (state_iter it = this->train_states.begin(); it!=this->train_states.end(); ++it) {
+        for (int j=0; j<this->nbasins; j++) {
+            this->basins[j].increment_stats(it->second);
+        }
+    }
+    for (int j=0; j<this->nbasins; j++) {
+        this->basins[j].normalize_stats();
+    }
+
+    //        double alpha = (i<niter/2) ? 1 - (double)i/(niter/2) : 0;
+    //        double alpha = 0.00002;
+    double alpha = 0.002;
+    //        if (i >= niter/2) {
+    //            alpha = 0.002 + (1-0.002)*exp(-(double) (i-niter/2) * (10.0/(((double)(niter/2)-1))));
+    //        }
+    //        cout << alpha << endl;
+    for (int j=0; j<this->nbasins; j++) {
+        this->basins[j].doMLE(alpha);
+    }
+    
+    update_trans();
+    return;
+}
+
+template <class BasinT>
+void HMM<BasinT>::update_forward() {
+    double norm = 0;
     for (int n=0; n<this->nbasins; n++) {
-        //        forward[(T-1)*this->nbasins+n] = final_state.P[n];
-        if (state_list[T-1]) {
-            forward[(T-1)*this->nbasins+n] = (state_list[T-1]->P)[n];
+        if (this->state_list[this->T-1]) {
+            forward[(this->T-1)*this->nbasins+n] = (this->state_list[this->T-1]->P)[n];
         } else {
-            forward[(T-1)*this->nbasins+n] = 1;
+            forward[(this->T-1)*this->nbasins+n] = 1;
         }
-        norm += forward[(T-1)*this->nbasins+n];
+        norm += forward[(this->T-1)*this->nbasins+n];
     }
     
     for (int n=0; n<this->nbasins; n++) {
-        forward[(T-1)*this->nbasins+n] /= norm;
+        forward[(this->T-1)*this->nbasins+n] /= norm;
     }
     
     
-    for (int t=T-2; t>=0; t--) {
-        //        State& this_state = this->train_states[words[t]];
+    for (int t=this->T-2; t>=0; t--) {
         double norm = 0;
         for (int n=0; n<this->nbasins; n++) {
-            //            forward[t*this->nbasins + n] = this_state.P[n];
-            if (state_list[t]) {
-                forward[t*this->nbasins + n] = (state_list[t]->P)[n];
+            if (this->state_list[t]) {
+                forward[t*this->nbasins + n] = (this->state_list[t]->P)[n];
             } else {
                 forward[t*this->nbasins + n] = 1;
             }
             double tmp = 0;
             for (int m=0; m<this->nbasins; m++) {
                 tmp += trans[n*this->nbasins + m] * forward[(t+1)*this->nbasins + m];
-            }
-            forward[t*this->nbasins + n] *= tmp;
-            norm += forward[t*this->nbasins + n];
-        }
-        
-        for (int n=0; n<this->nbasins; n++) {
-            forward[t*this->nbasins + n] /= norm;
-        }
-        
-    }
-
-
-    return;
-}
-
-template <class BasinT>
-vector<double> HMM<BasinT>::trans_at_t(int t) {
-    return this->trans;
-}
-
-template <class BasinT>
-void HMM<BasinT>::update_forward() {
-//    State& final_state = this->train_states.at(words[T-1]);
-
-    
-    double norm = 0;
-    int tmax = T + (T%tskip) - tskip;
-    for (int n=0; n<this->nbasins; n++) {
-//        forward[(T-1)*this->nbasins+n] = final_state.P[n];
-        if (state_list[tmax]) {
-            forward[tmax*this->nbasins+n] = (state_list[tmax]->P)[n];
-        } else {
-            forward[tmax*this->nbasins+n] = 1;
-        }
-        norm += forward[tmax*this->nbasins+n];
-    }
-    
-    for (int n=0; n<this->nbasins; n++) {
-        forward[tmax*this->nbasins+n] /= norm;
-    }
-    
-    vector<double> this_trans (this->nbasins*this->nbasins);
-    
-    for (int t=tmax-tskip; t>=0; t-=tskip) {
-//        State& this_state = this->train_states[words[t]];
-        double norm = 0;
-        this_trans = trans_at_t(t);
-        
-        for (int n=0; n<this->nbasins; n++) {
-//            forward[t*this->nbasins + n] = this_state.P[n];
-            if (state_list[t]) {
-                forward[t*this->nbasins + n] = (state_list[t]->P)[n];
-            } else {
-                forward[t*this->nbasins + n] = 1;
-            }
-            double tmp = 0;
-            for (int m=0; m<this->nbasins; m++) {
-                tmp += this_trans[n*this->nbasins + m] * forward[(t+tskip)*this->nbasins + m];
             }
             forward[t*this->nbasins + n] *= tmp;            
             norm += forward[t*this->nbasins + n];
@@ -1146,18 +930,16 @@ void HMM<BasinT>::update_backward() {
     for (int n=0; n<this->nbasins; n++) {
         backward[n] = w0[n];
     }
-    vector<double> this_trans (this->nbasins*this->nbasins);
-    for (int t=tskip; t<T; t+=tskip) {
-//        State& this_state = this->train_states.at(words[t-1]);
-        this_trans = trans_at_t(t);
+ 
+    for (int t=1; t<this->T; t++) {
         double norm = 0;
         for (int n=0; n<this->nbasins; n++) {
             backward[this->nbasins*t + n] = 0;
             for (int m=0; m<this->nbasins; m++) {
-                if (state_list[t-tskip]) {
-                    backward[this->nbasins*t + n] += (state_list[t-tskip]->P)[m] * this_trans[m*this->nbasins+n] * backward[(t-tskip)*this->nbasins + m];
+                if (this->state_list[t-1]) {
+                    backward[this->nbasins*t + n] += (this->state_list[t-1]->P)[m] * trans[m*this->nbasins+n] * backward[(t-1)*this->nbasins + m];
                 } else {
-                    backward[this->nbasins*t + n] += this_trans[m*this->nbasins+n] * backward[(t-tskip)*this->nbasins + m];
+                    backward[this->nbasins*t + n] += trans[m*this->nbasins+n] * backward[(t-1)*this->nbasins + m];
                 }
             }
             norm += backward[this->nbasins*t + n];
@@ -1186,16 +968,16 @@ void HMM<BasinT>::update_trans() {
     // Update trans
     vector<double> num (this->nbasins*this->nbasins,0);
     vector<double> prob (this->nbasins*this->nbasins);
-    for (int t=tskip; t<T; t+=tskip) {
+    for (int t=1; t<this->T; t++) {
 //        State& this_state = this->train_states.at(words[t-1]);
 
         double norm = 0;
         for (int n=0; n<this->nbasins; n++) {
             double tmp;
-            if (state_list[t-tskip]) {
-                tmp = (state_list[t-tskip]->P)[n] * backward[(t-tskip)*this->nbasins+n];
+            if (this->state_list[t-1]) {
+                tmp = (this->state_list[t-1]->P)[n] * backward[(t-1)*this->nbasins+n];
             } else {
-                tmp = backward[(t-tskip)*this->nbasins+n];
+                tmp = backward[(t-1)*this->nbasins+n];
             }
             for (int m=0; m<this->nbasins; m++) {
                 prob[n*this->nbasins+m] = tmp * trans[n*this->nbasins + m] * forward[t*this->nbasins + m];
@@ -1235,10 +1017,10 @@ void HMM<BasinT>::update_P() {
     vector<double> denom  (this->nbasins,0);
     int nsamp = 0;
     vector<double>  this_P (this->nbasins,0);
-    for (int t=0; t<T; t+=tskip) {
+    for (int t=0; t<this->T; t++) {
 //        State& this_state = this->train_states.at(words[t]);
-        if (state_list[t]) {
-            State& this_state = *state_list[t];
+        if (this->state_list[t]) {
+            State& this_state = *(this->state_list[t]);
             
             double norm = 0;
             for (int i=0; i<this->nbasins; i++) {
@@ -1274,70 +1056,27 @@ void HMM<BasinT>::update_P() {
 }
 
 template <class BasinT>
-double HMM<BasinT>::logli(bool obs) {
+double HMM<BasinT>::logli(bool obs) const {
     
     vector<int> alpha = viterbi(obs);
-//    State& init_state = this->train_states.at(words[0]);
+    vector<double> emiss = this->emiss_obs(obs, 0);
 
-
-    vector<double> emiss = emiss_obs(obs, tskip-1);
-    double logli = log(w0[alpha[tskip-1]] * emiss[alpha[tskip-1]]);
-        
-
-
-    for (int t=2*tskip-1; t<T; t+=tskip) {
-//        State& this_state = this->train_states.at(words[t]);
-        emiss = emiss_obs(obs, t);
-        double delta = log(trans[alpha[t-tskip]*this->nbasins + alpha[t]]) + log(emiss[alpha[t]]) - logli;;
-
-        logli += delta / (((t-1)/tskip)+1);
+    double logli = log(w0[alpha[0]] * emiss[alpha[0]]);
+    double nsamp = this->state_list[0]==0 ? 0 : 1;
+    for (int t=1; t<this->T; t++) {
+        emiss = this->emiss_obs(obs, t);
+        double delta = log(trans[alpha[t-1]*this->nbasins + alpha[t]]) + log(emiss[alpha[t]]) - logli;;
+        if (this->state_list[t]) nsamp++;
+        logli += delta / t;
     }
-    return logli;
-    
-//    State& final_state = this->train_states.at(words[T-1]);
-//    vector<double> logli (this->nbasins, 0);
-//    for (int n=0; n<this->nbasins; n++) {
-//        logli[n] = log(final_state.P[n]);
-//    }
-//
-//    for (int t=T-2; t>=0; t--) {
-//        vector<double> tmp_logli = logli;
-//        State& this_state = this->train_states[words[t]];
-//        for (int n=0; n<this->nbasins; n++) {            
-//            double tmp = 0;
-//            for (int m=0; m<this->nbasins; m++) {
-//                tmp += trans[n*this->nbasins + m] * exp(tmp_logli[m]);
-//            }
-//            logli[n] = log(this_state.P[n]) + log(tmp);
-//        }        
-//    }
-//
-//    double li = 0;
-//    for (int n=0; n<this->nbasins; n++) {
-//        li += exp(logli[n])*w0[n];
-//    }
-//    return log(li);
+    return logli * (this->T/nsamp);
 }
 
-/*
-template <class BasinT>
-vector<char> HMM<BasinT>::get_raster() {
-    
-    vector<char> raster (T*this->N, 0);
-    for (int t=0; t<T; t++) {
-        string this_str = words[t];
-        for (int n=0; n<this->N; n++) {
-            raster[t*this->N + n] = this_str[n];
-        }
-    }
-    return raster;
-}
-*/
 
 template <class BasinT>
-vector<double> HMM<BasinT>::get_P() {
-    vector<double> P (T*this->nbasins);
-    for (int t=0; t<T; t++) {
+vector<double> HMM<BasinT>::get_P() const {
+    vector<double> P (this->T*this->nbasins);
+    for (int t=0; t<this->T; t++) {
         double norm = 0;
         for (int n=0; n<this->nbasins; n++) {
             P[t*this->nbasins+n] = forward[t*this->nbasins+n]*backward[t*this->nbasins+n];
@@ -1351,12 +1090,12 @@ vector<double> HMM<BasinT>::get_P() {
 }
 
 template <class BasinT>
-vector<double> HMM<BasinT>::P_indep() {
-    vector<double> P (T*this->nbasins);
-    for (int t=0; t<T; t++) {
+vector<double> HMM<BasinT>::P_indep() const {
+    vector<double> P (this->T*this->nbasins);
+    for (int t=0; t<this->T; t++) {
         double norm = 0;        
         for (int n=0; n<this->nbasins; n++) {
-            P[t*this->nbasins+n] = this->w[n] * state_list[t]->P[n];
+            P[t*this->nbasins+n] = this->w[n] * this->state_list[t]->P[n];
             norm += P[t*this->nbasins+n];
         }
         for (int n=0; n<this->nbasins; n++) {
@@ -1368,49 +1107,23 @@ vector<double> HMM<BasinT>::P_indep() {
 }
 
 template <class BasinT>
-vector<double> HMM<BasinT>::get_trans() {
+vector<double> HMM<BasinT>::get_trans() const{
     return trans;
 }
 
-template<class BasinT>
-vector<double> HMM<BasinT>::emiss_obs(int obs, int t) {
 
-    // Train set & obs==1:  return P
-    // Test set & obs==0:   return P
-    // obs==2:      return P
-    // Else return 1
-    if (state_list[t] && (obs==1 || obs==2)) {
-        return state_list[t]->P;
-    } else if (!state_list[t] && (obs==0 || obs==2)) {
-        vector<double> emiss (this->nbasins, 1);
-        State this_state;
-        this_state.word.assign(this->N, 0);
-        for (int n=0; n<this->N; n++) {
-            if ((this->raster[t])[n] == '1') {
-                this_state.on_neurons.push_back(n);
-                this_state.word[n] = 1;
-            }
-        }
-        for (int k=0; k<this->nbasins; k++) {
-            emiss[k] = (this->basins)[k].P_state(this_state);
-        }
-        return emiss;
-    }
-    return vector<double> (this->nbasins,1);
-
-}
 
 template <class BasinT>
-vector<int> HMM<BasinT>::viterbi(int obs) {
+vector<int> HMM<BasinT>::viterbi(int obs) const {
 
-    vector<int> alpha_max (T,0);
-    vector<int> argmax (T*this->nbasins, 0);
+    vector<int> alpha_max (this->T,0);
+    vector<int> argmax (this->T*this->nbasins, 0);
 
     vector<double> max (this->nbasins, 1);
     vector<double> emiss (this->nbasins);
-    for (int t=(T-(T%tskip)-1); t>=(tskip-1); t-=tskip) {
+    for (int t = this->T-1; t>=0; t--) {
 //        State& this_state = this->train_states.at(words[t]);
-        emiss = emiss_obs(obs,t);
+        emiss = this->emiss_obs(obs,t);
         double norm = 0;
         for (int n=0; n<this->nbasins; n++) {
             double this_max = 0;
@@ -1439,7 +1152,7 @@ vector<int> HMM<BasinT>::viterbi(int obs) {
 //    State& this_state = this->train_states.at(words[0]);
     double this_max = 0;
     int this_arg = 0;
-    emiss = emiss_obs(obs,tskip-1);
+    emiss = this->emiss_obs(obs,0);
     for (int m=0; m<this->nbasins; m++) {
         double tmp = emiss[m] * w0[m] * max[m];
         if (tmp > this_max) {
@@ -1447,16 +1160,16 @@ vector<int> HMM<BasinT>::viterbi(int obs) {
             this_arg = m;
         }
     }
-    alpha_max[tskip-1] = this_arg;
-    for (int t=2*tskip-1; t<T; t+=tskip) {
-        alpha_max[t] = argmax[t*this->nbasins + alpha_max[t-tskip]];
+    alpha_max[0] = this_arg;
+    for (int t=1; t<this->T; t++) {
+        alpha_max[t] = argmax[t*this->nbasins + alpha_max[t-1]];
     }
     
     return alpha_max;
 }
 
 template <class BasinT>
-vector<double> HMM<BasinT>::stationary_prob() {
+vector<double> HMM<BasinT>::stationary_prob() const {
     // Stationary basin probability
     vector<double> trans_pow = mpow(trans, this->nbasins, 1000);
     vector<double> w (this->nbasins,0);
@@ -1470,7 +1183,7 @@ vector<double> HMM<BasinT>::stationary_prob() {
 
 
 template <class BasinT>
-vector<char> HMM<BasinT>::sample(int nsamples) {
+vector<char> HMM<BasinT>::sample(int nsamples) const {
     vector<char> samples (this->N*nsamples);
     int basin_ind = (this->rng)->discrete(w0);
     vector<char> this_sample = (this->basins)[basin_ind].sample();
@@ -1492,12 +1205,25 @@ vector<char> HMM<BasinT>::sample(int nsamples) {
 }
 
 template <class BasinT>
-pair<vector<double>, vector<double> > HMM<BasinT>::pred_prob() {
+pair<vector<double>, vector<double> > HMM<BasinT>::pred_prob() const {
     
-    this->test_states.clear();
-    for (int t=2*tskip-1; t<T; t+=tskip) {
-        if (state_list[t]) {
-            State this_state = *(state_list[t]);
+//    this->test_states.clear();
+    map<string,State> test_states;
+    for (int t=0; t<this->T; t++) {
+        State this_state = this->state_obs(2,t);
+        vector<char> this_word = this_state.word;
+        string this_str (this_word.size(), '0');
+        for (int i=0; i<this_word.size(); i++) {
+            this_str[i] = this_word[i];
+        }
+
+        pair<map<string, State>::iterator, bool> ins = test_states.insert(pair<string,State> (this_str, this_state));
+        State& inserted_state = (ins.first)->second;
+        inserted_state.freq++;
+        
+        /*
+        if (this->state_list[t]) {
+            State this_state = *(this->state_list[t]);
             this_state.freq = 0;
             vector<char> this_word = this_state.word;
             string this_str (this_word.size(), '0');
@@ -1508,17 +1234,17 @@ pair<vector<double>, vector<double> > HMM<BasinT>::pred_prob() {
             State& inserted_state = (ins.first)->second;
             inserted_state.freq++;
         }
+         */
     }
     
     vector<double> w = stationary_prob();
-    vector<double> prob (this->test_states.size(), 0);
-    vector<double> freq (this->test_states.size(), 0);
+    vector<double> prob (test_states.size(), 0);
+    vector<double> freq (test_states.size(), 0);
     int ix = 0;
-
-    for (map<string, State>::iterator it = (this->test_states).begin(); it != (this->test_states).end(); ++it) {
+    for (map<string, State>::iterator it = test_states.begin(); it != test_states.end(); ++it) {
+        State& this_state = it->second;
         for (int i=0; i<this->nbasins; i++) {
-            double this_P = this->basins[i].P_state(it->second);
-            prob[ix] += w[i] * this_P;
+            prob[ix] += w[i] * this_state.P[i];
             freq[ix] = (it->second).freq;
         }
         ix++;

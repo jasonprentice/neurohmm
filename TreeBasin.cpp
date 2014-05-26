@@ -268,7 +268,7 @@ double TreeBasin::compute_MI(double Cij, double pi, double pj) {
 }
 
 
-vector<char> TreeBasin::sample() {
+vector<char> TreeBasin::sample() const {
     vector<char> this_sample (N);
     queue<int> to_process;
     to_process.push(0);

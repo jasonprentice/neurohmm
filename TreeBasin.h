@@ -64,7 +64,7 @@ public:
     
     void doMLE(double);
     double P_state(const State&) const;
-    vector<char> sample();
+    vector<char> sample() const;
     
     paramsStruct get_params();
 private:

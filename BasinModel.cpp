@@ -172,7 +172,7 @@ double IndependentBasin::P_state(const State& this_state) const {
     return P;
 }
 
-vector<char> IndependentBasin::sample() {
+vector<char> IndependentBasin::sample() const {
     vector<char> this_sample (N);
     for (int i=0; i<N; i++) {
         this_sample[i] = (rng->bernoulli(m.at(i))) ? 1 : 0;

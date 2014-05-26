@@ -24,16 +24,18 @@ class RNG
 public:
     RNG();
     ~RNG();
-    int discrete(const vector<double>&);
-    bool bernoulli(double);
-    double uniform();
-    vector<int> randperm(int);
+    int discrete(const vector<double>&) const;
+    bool bernoulli(double) const;
+    double uniform() const;
+    vector<int> randperm(int) const;
 private:
     gsl_rng* rng_pr;
 };
 
 struct State
 {
+    State() : freq(0), pred_prob(-1), identifier(-1) {};
+    
     vector<int> active_constraints;
     vector<int> on_neurons;
     vector<double> P;
@@ -77,18 +79,18 @@ class EMBasins
 {
 public:
     EMBasins(int N, int nbasins);
-    EMBasins(vector<vector<double> >& st, double binsize, int nbasins);
+    EMBasins(vector<vector<double> >& st, vector<double>, vector<double>, double binsize, int nbasins);
     ~EMBasins();
     
-    vector<double> train(int niter);
-    vector<double> crossval(int niter, int k);      // k-fold cross-validation
-    vector<double> test(const vector<vector<double> >& st, double binsize);
+    vector<double> train(int, bool);
+//    vector<double> crossval(int niter, int k);      // k-fold cross-validation
+//    vector<double> test(const vector<vector<double> >& st, double binsize);
     
-    int nstates() const {return all_states.size();};
+    int nstates() const {return train_states.size();};
     vector<unsigned long> state_hist() const;
-    vector<unsigned long> test_hist() const;
+//    vector<unsigned long> test_hist() const;
     vector<double> all_prob() const;
-    vector<double> test_prob() const;
+//    vector<double> test_prob() const;
     vector<double> P() const;    
     vector<paramsStruct> basin_params();
     vector<char> sample(int);
@@ -97,30 +99,33 @@ public:
     vector<double> w;       // 1 x nbasins
     vector<double> m;       // N x nbasins
     
-    vector<double> test_logli;
+    //vector<double> test_logli;
     
 protected:
-    int nbasins;
-    int N;
+    int nbasins, N, T;
     double nsamples;
-    
-    map<string, State> all_states;
-    map<string, State> train_states;
-    map<string, State> test_states;
-    
+    RNG* rng;
     vector<BasinT> basins;
     
-    RNG* rng;
-    
     vector<string> raster;
+    map<string, State> train_states;
+    vector<State*> state_list;
     
-    void update_w();
-    double update_P();
-    double update_P_test();
-    
-    double set_state_P(State&);
     vector<Spike> sort_spikes(const vector<vector<double> >&, double) const;
+   
+    State state_obs(int,int) const;
+    vector<double> emiss_obs(int,int) const;
+    double logli(bool) const;
+
+private:
+    void update_w();
+
+    void update_P();
     
+    void initParams();
+    void Estep();
+    void Mstep();
+
 };
 
 // *********************************
@@ -132,46 +137,38 @@ class HMM : public EMBasins<BasinT>
 public:
     HMM(vector<vector<double> >& st, vector<double>, vector<double>, double binsize, int nbasins);
     
-    vector<double> train(int niter);
-    vector<int> viterbi(int);
+    vector<double> train(int, bool);
+    vector<int> viterbi(int) const;
+    vector<double> emiss_prob() const;
+    vector<double> get_forward() const;
+    vector<double> get_backward() const;
+    vector<double> get_P() const;
+    vector<double> get_trans() const;
+    vector<double> stationary_prob() const;
+    pair<vector<double>, vector<double> > pred_prob() const;
+    vector<int> state_v_time() const;
     
-//    vector<char> get_raster();
-    vector<double> emiss_prob();
-    vector<double> get_forward();
-    vector<double> get_backward();
-    vector<double> get_P();
-    vector<double> get_trans();
-    vector<double> stationary_prob();
-    pair<vector<double>, vector<double> > pred_prob();
-    vector<int> state_v_time();
-    
-    vector<char> sample(int);
-    vector<double> P_indep();
+    vector<char> sample(int) const;
+    vector<double> P_indep() const;
 protected:
-    int T, tmax, tskip;
-
-   
     vector<double> forward;         // Forward filtering distribution
     vector<double> backward;        // Backward filtering distribution
-    //vector<string> words;
-
-    vector<State*> state_list;
     
     void update_forward();
     void update_backward();
-
-    void forward_backward();
-    vector<double> trans_at_t(int);
-    
     void update_P();
 
-    double logli(bool);
+    double logli(bool) const;
 private:
     vector<double> w0;
     vector<double> trans;           // State transition probability matrix
     
     void update_trans();
-    vector<double> emiss_obs(int,int);
+    
+    
+    void initParams();
+    void Estep();
+    void Mstep();
 
 };
 // *********************************
