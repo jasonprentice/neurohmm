@@ -21,6 +21,8 @@
 #include <cstdlib>
 #include <ctime>
 
+//#include <gperftools/profiler.h>
+
 // Selects which basin model to use
 typedef TreeBasin BasinType;
 
@@ -118,6 +120,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     int nbasins = (int) *mxGetPr(prhs[3]);
     int niter = (int) *mxGetPr(prhs[4]);
 
+    // ProfilerStart("./EMBasins.prof");
    /*
     // Autocorrelation model
     Autocorr<BasinType> basin_obj(st, binsize, nbasins);
@@ -156,6 +159,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
 //    writeOutputMatrix(3, basin_obj.sample(100000), N,100000, plhs);
     */
 
+   
     
     // Hidden Markov model
     HMM<BasinType> basin_obj(st, unobserved_edges_low, unobserved_edges_high, binsize, nbasins);
@@ -236,7 +240,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     writeOutputMatrix(0, logli, niter, kfolds, plhs);
     */
     
-    
+  //  ProfilerStop();
     return;
 }
 
