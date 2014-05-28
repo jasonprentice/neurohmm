@@ -17,6 +17,7 @@
 
 #include <mutex>
 #include <condition_variable>
+#include <boost/thread/barrier.hpp>
 
 using namespace std;
 
@@ -183,6 +184,7 @@ private:
     condition_variable cv_emiss, cv_bkwd, cv_fwd;
     mutex emiss_flag_mtx, bkwd_flag_mtx, fwd_flag_mtx;
     
+    boost::barrier barrier;
 };
 // *********************************
 
