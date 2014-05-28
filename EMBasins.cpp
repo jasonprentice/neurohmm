@@ -773,8 +773,7 @@ HMM<BasinT>::HMM(vector<vector<double> >& st, vector<double> unobserved_l, vecto
                             forward(this->T * nbasins,0),
                             backward(this->T * nbasins,0),
                             trans(this->T*nbasins,0),
-                            w0 (nbasins),
-                            barrier (4) {}
+                            w0 (nbasins) {}
 
 template <class BasinT>
 vector<int> HMM<BasinT>::state_v_time() const {
@@ -823,29 +822,26 @@ vector<double> HMM<BasinT>::train(int niter, bool ret_train_logli) {
     
    
     
-    // Create 3 threads: one to do update_forward, then update_trans; one to do update_backward; and one to do logli. The main thread will update emission probabilities and basin parameters
     
-    // 1. Main thread updates emission probabilities.
-    // 2. Worker threads update forward, backward, and logli in parallel (no race condition as long as emission probabilities and trans are not written to)
-    // 3. Main thread does M-step on basin params while worker thread updates trans
-    
-    // Still need some mechanism to ensure each worker thread runs once per main loop iteration
-    // Could create/destroy threads inside loop, but probably expensive?
-    
-    forward_updated = backward_updated = emiss_updated = false;
-    
-    
-    thread forward_trans_thread(HMM<BasinT>::forward_trans_thread_fun, this);
-    thread backward_thread(HMM<BasinT>::backward_thread_fun, this);
-    thread logli_thread(HMM<BasinT>::logli_thread_fun, this, &train_logli, ret_train_logli);
-
     cout << "Beginning train loop." << endl;
+
     for (int i=0; i<niter; i++) {
         //cout << "Iteration " << i << endl;
         mexPrintf("Iteration %d\n", i);
         mexEvalString("drawnow");
         
-      
+        forward_updated = backward_updated = emiss_updated = false;
+        
+        // Create 3 threads: one to do update_forward, then update_trans; one to do update_backward; and one to do logli. The main thread will update emission probabilities and basin parameters
+        
+        // 1. Main thread updates emission probabilities.
+        // 2. Worker threads update forward, backward, and logli in parallel (no race condition as long as emission probabilities and trans are not written to)
+        // 3. Main thread does M-step on basin params while worker thread updates trans
+
+        thread forward_trans_thread(HMM<BasinT>::forward_trans_thread_fun, this);
+        thread backward_thread(HMM<BasinT>::backward_thread_fun, this);
+        thread logli_thread(HMM<BasinT>::logli_thread_fun, this, &train_logli, ret_train_logli);
+
         update_emiss();
 
         // Signal all worker threads
@@ -868,106 +864,82 @@ vector<double> HMM<BasinT>::train(int niter, bool ret_train_logli) {
         }
         lck_bkwd.unlock();
         
-        
         update_P();
-        
 //        this->Estep();
         Mstep();
 
-        if (this->barrier.wait()) {
-            forward_updated = backward_updated = emiss_updated = false;
-        };
         
-//        forward_trans_thread.join();
-//        backward_thread.join();
-//        logli_thread.join();
+        forward_trans_thread.join();
+        backward_thread.join();
+        logli_thread.join();
         
-//        train_logli[i] = logli(ret_train_logli);
     }
     return train_logli;
 }
 
 template <class BasinT>
 void HMM<BasinT>::forward_trans_thread_fun(HMM<BasinT>* instance) {
-    while (1) {
-        
-        // Wait for signal from main thread.
-        unique_lock<mutex> lck (instance->emiss_flag_mtx);
-        while (!instance->emiss_updated) {
-            instance->cv_emiss.wait(lck);
-        }
-        lck.unlock();
-        
-        instance->update_forward();
-
-        // Signal main thread
-        unique_lock<mutex> lck_fwd (instance->fwd_flag_mtx);
-        instance->forward_updated = true;
-        instance->cv_fwd.notify_all();
-        lck_fwd.unlock();
-
-        
-        // Wait for backward_thread
-        unique_lock<mutex> lck_bkwd(instance->bkwd_flag_mtx);
-        while (!instance->backward_updated) {
-            instance->cv_bkwd.wait(lck_bkwd);
-        }
-        lck_bkwd.unlock();
-        
-        instance->update_trans();
-        
-        if (instance->barrier.wait()) {
-            instance->forward_updated = instance->backward_updated = instance->emiss_updated = false;
-        };
-
-//    return;
+    
+    // Wait for signal from main thread.
+    unique_lock<mutex> lck (instance->emiss_flag_mtx);
+    while (!instance->emiss_updated) {
+        instance->cv_emiss.wait(lck);
     }
+    lck.unlock();
+
+    instance->update_forward();
+
+    // Signal main thread
+    unique_lock<mutex> lck_fwd (instance->fwd_flag_mtx);
+    instance->forward_updated = true;
+    instance->cv_fwd.notify_all();
+    lck_fwd.unlock();
+    
+    // Wait for backward_thread
+    unique_lock<mutex> lck_bkwd(instance->bkwd_flag_mtx);
+    while (!instance->backward_updated) {
+        instance->cv_bkwd.wait(lck_bkwd);
+    }
+    lck_bkwd.unlock();
+    
+    instance->update_trans();
+        
+    return;
 }
 
 template <class BasinT>
 void HMM<BasinT>::logli_thread_fun(HMM<BasinT>* instance, vector<double>* train_logli, bool ret_train_logli) {
-    while (1) {
-        // Wait for signal from main thread.
-        unique_lock<mutex> lck (instance->emiss_flag_mtx);
-        while (!instance->emiss_updated) {
-            instance->cv_emiss.wait(lck);
-        }
-        lck.unlock();
-        
-        train_logli->push_back( instance->logli(ret_train_logli) );
-        
-        if (instance->barrier.wait()) {
-            instance->forward_updated = instance->backward_updated = instance->emiss_updated = false;
-        };
 
-//    return;
+    // Wait for signal from main thread.
+    unique_lock<mutex> lck (instance->emiss_flag_mtx);
+    while (!instance->emiss_updated) {
+        instance->cv_emiss.wait(lck);
     }
+    lck.unlock();
+    
+    train_logli->push_back( instance->logli(ret_train_logli) );
+    
+    return;
 }
 
 template <class BasinT>
 void HMM<BasinT>::backward_thread_fun(HMM<BasinT>* instance) {
-    while (1) {
-        // Wait for signal from main thread.
-        unique_lock<mutex> lck (instance->emiss_flag_mtx);
-        while (!instance->emiss_updated) {
-            instance->cv_emiss.wait(lck);
-        }
-        lck.unlock();
-        
-        instance->update_backward();
 
-        // Signal forward_trans_thread and main thread
-        unique_lock<mutex> bkwd_lck (instance->bkwd_flag_mtx);
-        instance->backward_updated = true;
-        instance->cv_bkwd.notify_all();
-        bkwd_lck.unlock();
-        
-        if (instance->barrier.wait()) {
-            instance->forward_updated = instance->backward_updated = instance->emiss_updated = false;
-        };
-
-   // return;
+    unique_lock<mutex> lck (instance->emiss_flag_mtx);
+    while (!instance->emiss_updated) {
+        instance->cv_emiss.wait(lck);
     }
+    lck.unlock();
+
+    instance->update_backward();
+
+    // Signal forward_trans_thread and main thread
+    unique_lock<mutex> bkwd_lck (instance->bkwd_flag_mtx);
+    instance->backward_updated = true;
+    instance->cv_bkwd.notify_all();
+    bkwd_lck.unlock();
+        
+    return;
 }
 
 template <class BasinT>
