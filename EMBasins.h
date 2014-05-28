@@ -15,6 +15,9 @@
 #include <string>
 #include <map>
 
+#include <mutex>
+#include <condition_variable>
+
 using namespace std;
 
 
@@ -163,15 +166,26 @@ private:
     vector<double> w0;
     vector<double> trans;           // State transition probability matrix
     
+    void update_emiss();
     void update_trans();
     
+    static void forward_trans_thread_fun(HMM<BasinT>*);
+    static void logli_thread_fun(HMM<BasinT>*,vector<double>*, bool);
+    static void backward_thread_fun(HMM<BasinT>*);
+    
+
     
     void initParams();
     void Estep();
     void Mstep();
-
+    
+    bool emiss_updated, backward_updated, forward_updated;
+    condition_variable cv_emiss, cv_bkwd, cv_fwd;
+    mutex emiss_flag_mtx, bkwd_flag_mtx, fwd_flag_mtx;
+    
 };
 // *********************************
+
 
 // ************ Autocorr ***********
 template <class BasinT>
