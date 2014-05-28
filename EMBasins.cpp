@@ -24,7 +24,7 @@
 //#include <gperftools/profiler.h>
 
 // Selects which basin model to use
-typedef TreeBasin BasinType;
+typedef IndependentBasin BasinType;
 
 template <typename T>
 void writeOutputMatrix(int pos, vector<T> value, int N, int M, mxArray**& plhs) {
@@ -163,7 +163,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     
     // Hidden Markov model
     HMM<BasinType> basin_obj(st, unobserved_edges_low, unobserved_edges_high, binsize, nbasins);
-    bool ret_train_logli = false;
+    bool ret_train_logli = true;
     vector<double> logli = basin_obj.train(niter, ret_train_logli);
 
     cout << "Viterbi..." << endl;
@@ -815,8 +815,9 @@ vector<double> HMM<BasinT>::train(int niter, bool ret_train_logli) {
 
     vector<double> train_logli (niter);
     for (int i=0; i<niter; i++) {
-        cout << "Iteration " << i << endl;
-        
+    //    cout << "Iteration " << i << endl;
+        mexPrintf("Iteration %d\n",i);
+	mexEvalString("drawnow");
         this->Estep();
         this->Mstep();
 
