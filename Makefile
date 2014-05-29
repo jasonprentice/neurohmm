@@ -5,4 +5,4 @@ TreeBasin.o : TreeBasin.cpp TreeBasin.h BasinModel.h EMBasins.h
 	g++ -O3 -c -I/usr/local/include/boost_1_52_0 -std=c++11 -stdlib=libc++ TreeBasin.cpp
 
 BasinModel.o : BasinModel.cpp BasinModel.h EMBasins.h
-	g++ -O3 -c -stdlib=libc++ -std=c++11 BasinModel.cpp
+	g++ -O3 -c -I/usr/local/include/boost_1_52_0 -std=c++11 -stdlib=libc++ BasinModel.cpp
