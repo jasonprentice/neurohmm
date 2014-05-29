@@ -115,7 +115,7 @@ protected:
     vector<State*> state_list;
     
     vector<Spike> sort_spikes(const vector<vector<double> >&, double) const;
-   
+    State build_state(vector<char>) const;
     State state_obs(int,int) const;
     vector<double> emiss_obs(int,int) const;
     double logli(bool) const;
@@ -149,6 +149,7 @@ public:
     vector<double> get_trans() const;
     vector<double> stationary_prob() const;
     pair<vector<double>, vector<double> > pred_prob() const;
+    pair<vector<double>, vector<double> > sample_pred_prob(const vector<char>&) const;
     vector<int> state_v_time() const;
     
     vector<char> sample(int) const;
@@ -173,7 +174,7 @@ private:
     static void logli_thread_fun(HMM<BasinT>*,vector<double>*, bool);
     static void backward_thread_fun(HMM<BasinT>*);
     
-
+    pair<vector<double>, vector<double> > pred_prob_helper(const map<string,State>&) const;
     
     void initParams();
     void Estep();

@@ -27,7 +27,7 @@
 //#include <gperftools/profiler.h>
 
 // Selects which basin model to use
-typedef IndependentBasin BasinType;
+typedef TreeBasin BasinType;
 
 template <typename T>
 void writeOutputMatrix(int pos, vector<T> value, int N, int M, mxArray**& plhs) {
@@ -195,7 +195,18 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     writeOutputMatrix(5, hist, 1, hist.size(), plhs);
     writeOutputStruct(6, params, plhs);
     //cout << "Samples..." << endl;
-    writeOutputMatrix(7, basin_obj.sample(100000), N,100000, plhs);
+    
+    int nsamples = 100000;
+    vector<char> sample = basin_obj.sample(nsamples);
+    writeOutputMatrix(7, sample, N,nsamples, plhs);
+    
+    pair<vector<double>, vector<double> > tmp_samp = basin_obj.sample_pred_prob(sample);
+    vector<double> samp_prob = tmp_samp.first;
+    vector<double> samp_hist = tmp_samp.second;
+    writeOutputMatrix(8, samp_prob, 1, samp_prob.size(), plhs);
+    writeOutputMatrix(9, samp_hist, 1, samp_prob.size(), plhs);
+    
+    
 //    writeOutputMatrix(7, basin_obj.word_list(), N, hist.size(), plhs);
 //    writeOutputMatrix(6, basin_obj.stationary_prob(), 1,nbasins, plhs);
     
@@ -436,7 +447,24 @@ EMBasins<BasinT>::EMBasins(vector<vector<double> >& st, vector<double> unobserve
         }
     }
 
-};
+}
+
+template <class BasinT>
+State EMBasins<BasinT>::build_state(vector<char> word) const {
+    State this_state;
+    this_state.P.assign(nbasins,0);
+    this_state.weight.assign(nbasins,0);
+    this_state.word = word;
+    for (int i=0; i<N; i++) {
+        if (word[i]) {
+            this_state.on_neurons.push_back(i);
+
+        }
+    }
+    this_state.active_constraints = BasinT::get_active_constraints(this_state);
+    return this_state;
+}
+
 
 template <class BasinT>
 EMBasins<BasinT>::~EMBasins() {
@@ -1352,7 +1380,7 @@ pair<vector<double>, vector<double> > HMM<BasinT>::pred_prob() const {
             this_str[i] = this_word[i];
         }
 
-        pair<map<string, State>::iterator, bool> ins = test_states.insert(pair<string,State> (this_str, this_state));
+        pair<state_iter, bool> ins = test_states.insert(pair<string,State> (this_str, this_state));
         State& inserted_state = (ins.first)->second;
         inserted_state.freq++;
         
@@ -1372,23 +1400,66 @@ pair<vector<double>, vector<double> > HMM<BasinT>::pred_prob() const {
          */
     }
     
+    return pred_prob_helper(test_states);
+    
+    
+}
+
+template <class BasinT>
+pair<vector<double>, vector<double> > HMM<BasinT>::pred_prob_helper(const map<string,State>& test_states) const {
     vector<double> w = stationary_prob();
     vector<double> prob (test_states.size(), 0);
     vector<double> freq (test_states.size(), 0);
     int ix = 0;
-    for (map<string, State>::iterator it = test_states.begin(); it != test_states.end(); ++it) {
-        State& this_state = it->second;
+    for (auto it = test_states.begin(); it != test_states.end(); ++it) {
+        State this_state = it->second;
         for (int i=0; i<this->nbasins; i++) {
             prob[ix] += w[i] * this_state.P[i];
             freq[ix] = (it->second).freq;
         }
         ix++;
     }
-
-    return pair<vector<double>, vector<double> > (prob, freq);
-    
-    
+   
+    return pair<vector<double>, vector<double> > (prob,freq);
 }
+                                
+
+template <class BasinT>
+pair<vector<double>, vector<double> > HMM<BasinT>::sample_pred_prob(const vector<char>& sample) const {
+    int nsamples = sample.size() / this->N;
+    
+    map<string,State> sample_states;
+    vector<char> word (this->N);
+    for (int t=0; t<nsamples; t++) {
+        for (int i=0; i<this->N; i++) {
+            word[i] = sample[this->N * t + i];
+        }
+        
+        string this_str (this->N, '0');
+        for (int i=0; i<this->N; i++) {
+            this_str[i] = word[i];
+        }
+        
+        State this_state = this->build_state(word);
+        
+        pair<state_iter, bool> ins = sample_states.insert(pair<string,State> (this_str, this_state));
+        State& inserted_state = (ins.first)->second;
+        inserted_state.freq++;
+    }
+    
+    for (state_iter it = sample_states.begin(); it != sample_states.end(); ++it) {
+        State& this_state = it->second;
+        for (int i=0; i<this->nbasins; i++) {
+            this_state.P[i] = this->basins[i].P_state(this_state);
+        }
+    }
+    
+    return pred_prob_helper(sample_states);
+}
+
+
+
+
 
 
 template <class BasinT>
