@@ -27,7 +27,7 @@
 //#include <gperftools/profiler.h>
 
 // Selects which basin model to use
-typedef TreeBasin BasinType;
+typedef IndependentBasin BasinType;
 
 template <typename T>
 void writeOutputMatrix(int pos, vector<T> value, int N, int M, mxArray**& plhs) {
@@ -163,7 +163,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     */
 
    
-    
+    /*
     // Hidden Markov model
     cout << "Constructing HMM object" << endl;
     HMM<BasinType> basin_obj(st, unobserved_edges_low, unobserved_edges_high, binsize, nbasins);
@@ -209,15 +209,15 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     
 //    writeOutputMatrix(7, basin_obj.word_list(), N, hist.size(), plhs);
 //    writeOutputMatrix(6, basin_obj.stationary_prob(), 1,nbasins, plhs);
+    */
     
     
-    /*
     // Mixture model
     cout << "Initializing EM..." << endl;
     EMBasins<BasinType> basin_obj(st, unobserved_edges_low, unobserved_edges_high, binsize, nbasins);
         
     cout << "Training model..." << endl;
-    bool ret_train_logli = false;
+    bool ret_train_logli = true;
     vector<double> logli = basin_obj.train(niter, ret_train_logli);
     //vector<double> test_logli = basin_obj.test_logli;
     
@@ -244,7 +244,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     writeOutputMatrix(5, basin_obj.all_prob(), nstates, 1, plhs);
     writeOutputMatrix(6, logli, niter, 1, plhs);
 //    writeOutputMatrix(6, P_test, nbasins, P_test.size()/nbasins, plhs);
-    */
+    
     
     
     /*
@@ -511,8 +511,8 @@ vector<double> EMBasins<BasinT>::train(int niter, bool ret_train_logli) {
 
     vector<double> train_logli (niter);
     for (int i=0; i<niter; i++) {
-        cout << "Iteration " << i << endl;
-
+//        cout << "Iteration " << i << endl;
+        mexPrintf("Iteration %d\n", i);
         Estep();
         Mstep();
      
