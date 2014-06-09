@@ -23,11 +23,11 @@
 
 #include <thread>
 
-
-//#include <gperftools/profiler.h>
-
+//#define MIXTURE
+#define MARKOV
 // Selects which basin model to use
 typedef TreeBasin BasinType;
+bool ret_train_logli = true;
 
 template <typename T>
 void writeOutputMatrix(int pos, vector<T> value, int N, int M, mxArray**& plhs) {
@@ -162,91 +162,87 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
 //    writeOutputMatrix(3, basin_obj.sample(100000), N,100000, plhs);
     */
 
-   
-    
-    // Hidden Markov model
-    cout << "Constructing HMM object" << endl;
-    HMM<BasinType> basin_obj(st, unobserved_edges_low, unobserved_edges_high, binsize, nbasins);
-    bool ret_train_logli = true;
-    vector<double> logli = basin_obj.train(niter, ret_train_logli);
+#ifdef MARKOV
+            // Hidden Markov model
+            cout << "Constructing HMM object" << endl;
+            HMM<BasinType> basin_obj(st, unobserved_edges_low, unobserved_edges_high, binsize, nbasins);
+            vector<double> logli = basin_obj.train(niter, ret_train_logli);
 
-    cout << "Viterbi..." << endl;
-    vector<int> alpha = basin_obj.viterbi(2);
-    cout << "P...." << endl;
-    vector<double> P = basin_obj.get_P();
-    cout << "Pred prob..." << endl;
-    pair<vector<double>, vector<double> > tmp = basin_obj.pred_prob();
-    vector<double> pred_prob = tmp.first;
-    vector<double> hist = tmp.second;
-//    vector<unsigned long> hist = basin_obj.state_hist();
-    int T = floor(P.size() / nbasins);
+            cout << "Viterbi..." << endl;
+            vector<int> alpha = basin_obj.viterbi(2);
+            cout << "P...." << endl;
+            vector<double> P = basin_obj.get_P();
+            cout << "Pred prob..." << endl;
+            pair<vector<double>, vector<double> > tmp = basin_obj.pred_prob();
+            vector<double> pred_prob = tmp.first;
+            vector<double> hist = tmp.second;
+        //    vector<unsigned long> hist = basin_obj.state_hist();
+            int T = floor(P.size() / nbasins);
 
-    cout << "Params..." << endl;
-    vector<paramsStruct> params = basin_obj.basin_params();
-    
-    writeOutputMatrix(0, logli, niter, 1, plhs);
-    writeOutputMatrix(1, basin_obj.get_trans(), nbasins, nbasins, plhs);
-    writeOutputMatrix(2, P, nbasins, T, plhs);
-//    writeOutputMatrix(2, basin_obj.emiss_prob(), nbasins, T, plhs);
-//    cout << "Microstates..." << endl;
-//    writeOutputMatrix(2, basin_obj.state_v_time(), 1, T, plhs);
-    writeOutputMatrix(3, alpha, T, 1, plhs);
-    writeOutputMatrix(4, pred_prob, 1, pred_prob.size(), plhs);
-    writeOutputMatrix(5, hist, 1, hist.size(), plhs);
-    writeOutputStruct(6, params, plhs);
-    //cout << "Samples..." << endl;
-    
-    int nsamples = 100000;
-    vector<char> sample = basin_obj.sample(nsamples);
-    writeOutputMatrix(7, sample, N,nsamples, plhs);
-    
-    pair<vector<double>, vector<double> > tmp_samp = basin_obj.sample_pred_prob(sample);
-    vector<double> samp_prob = tmp_samp.first;
-    vector<double> samp_hist = tmp_samp.second;
-    writeOutputMatrix(8, samp_prob, 1, samp_prob.size(), plhs);
-    writeOutputMatrix(9, samp_hist, 1, samp_prob.size(), plhs);
-    
-    
-//    writeOutputMatrix(7, basin_obj.word_list(), N, hist.size(), plhs);
-//    writeOutputMatrix(6, basin_obj.stationary_prob(), 1,nbasins, plhs);
-    
-    
+            cout << "Params..." << endl;
+            vector<paramsStruct> params = basin_obj.basin_params();
+            
+            writeOutputMatrix(0, logli, niter, 1, plhs);
+            writeOutputMatrix(1, basin_obj.get_trans(), nbasins, nbasins, plhs);
+//            writeOutputMatrix(2, P, nbasins, T, plhs);
+            writeOutputMatrix(2, basin_obj.emiss_prob(), nbasins, T, plhs);
+        //    cout << "Microstates..." << endl;
+            writeOutputMatrix(3, alpha, T, 1, plhs);
+            writeOutputMatrix(4, pred_prob, 1, pred_prob.size(), plhs);
+            writeOutputMatrix(5, hist, 1, hist.size(), plhs);
+            writeOutputStruct(6, params, plhs);
+            writeOutputMatrix(7, basin_obj.state_v_time(), 1, T, plhs);
+            //cout << "Samples..." << endl;
     /*
-    // Mixture model
-    cout << "Initializing EM..." << endl;
-    EMBasins<BasinType> basin_obj(st, unobserved_edges_low, unobserved_edges_high, binsize, nbasins);
-        
-    cout << "Training model..." << endl;
-    bool ret_train_logli = true;
-    vector<double> logli = basin_obj.train(niter, ret_train_logli);
-    //vector<double> test_logli = basin_obj.test_logli;
-    
-//    cout << "Testing..." << endl;
-//    vector<double> P_test = basin_obj.test(st_test,binsize);
-    
-    vector<paramsStruct> params = basin_obj.basin_params();
-    int nstates = basin_obj.nstates();
-    cout << nstates << " states." << endl;
-    
-//    cout << "Getting samples..." << endl;
-    int nsamples = 100000;
-    vector<char> samples = basin_obj.sample(nsamples);
+            int nsamples = 100000;
+            vector<char> sample = basin_obj.sample(nsamples);
+            writeOutputMatrix(7, sample, N,nsamples, plhs);
+            
+            pair<vector<double>, vector<double> > tmp_samp = basin_obj.sample_pred_prob(sample);
+            vector<double> samp_prob = tmp_samp.first;
+            vector<double> samp_hist = tmp_samp.second;
+            writeOutputMatrix(8, samp_prob, 1, samp_prob.size(), plhs);
+            writeOutputMatrix(9, samp_hist, 1, samp_prob.size(), plhs);
+            
+            */
+           // writeOutputMatrix(7, basin_obj.word_list(), N, hist.size(), plhs);
+        //    writeOutputMatrix(6, basin_obj.stationary_prob(), 1,nbasins, plhs);
+#endif
+#ifdef MIXTURE
+
+            // Mixture model
+            cout << "Initializing EM..." << endl;
+            EMBasins<BasinType> basin_obj(st, unobserved_edges_low, unobserved_edges_high, binsize, nbasins);
+                
+            cout << "Training model..." << endl;
+
+            vector<double> logli = basin_obj.train(niter, ret_train_logli);
+            //vector<double> test_logli = basin_obj.test_logli;
+            
+        //    cout << "Testing..." << endl;
+        //    vector<double> P_test = basin_obj.test(st_test,binsize);
+            
+            vector<paramsStruct> params = basin_obj.basin_params();
+            int nstates = basin_obj.nstates();
+            cout << nstates << " states." << endl;
+            
+        //    cout << "Getting samples..." << endl;
+            int nsamples = 100000;
+            vector<char> samples = basin_obj.sample(nsamples);
 
 
-    cout << "Writing outputs..." << endl;    
-    
-    writeOutputMatrix(0, basin_obj.w, nbasins,1, plhs);    
-    writeOutputStruct(1, params, plhs);
-//    writeOutputMatrix(2, basin_obj.word_list(), N, nstates, plhs);
-    writeOutputMatrix(2, samples, N, nsamples, plhs);
-    writeOutputMatrix(3, basin_obj.state_hist(), nstates, 1, plhs);
-    writeOutputMatrix(4, basin_obj.P(), nbasins, nstates, plhs);
-    writeOutputMatrix(5, basin_obj.all_prob(), nstates, 1, plhs);
-    writeOutputMatrix(6, logli, niter, 1, plhs);
-//    writeOutputMatrix(6, P_test, nbasins, P_test.size()/nbasins, plhs);
-    */
-    
-    
+            cout << "Writing outputs..." << endl;    
+            
+            writeOutputMatrix(0, basin_obj.w, nbasins,1, plhs);    
+            writeOutputStruct(1, params, plhs);
+        //    writeOutputMatrix(2, basin_obj.word_list(), N, nstates, plhs);
+            writeOutputMatrix(2, samples, N, nsamples, plhs);
+            writeOutputMatrix(3, basin_obj.state_hist(), nstates, 1, plhs);
+            writeOutputMatrix(4, basin_obj.P(), nbasins, nstates, plhs);
+            writeOutputMatrix(5, basin_obj.all_prob(), nstates, 1, plhs);
+            writeOutputMatrix(6, logli, niter, 1, plhs);
+        //    writeOutputMatrix(6, P_test, nbasins, P_test.size()/nbasins, plhs);
+#endif
     /*
     // k-fold cross-validation
     int kfolds = 10;
