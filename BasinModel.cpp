@@ -14,6 +14,8 @@
 #include <ctime>
 #include <iostream>
 
+using namespace std;
+
 // paramsStruct
 paramsStruct::paramsStruct() : nfields(0) {}
 
@@ -103,7 +105,7 @@ void BasinModel::normalize_stats() {
 // IndependentBasin
 
 
-IndependentBasin::IndependentBasin(int N, int basin_num, RNG* rng, double min) : BasinModel(N,basin_num,rng), prefactor(1), above_thresh_bool(N,0)
+IndependentBasin::IndependentBasin(int N, int basin_num, RNG* rng, double min) : BasinModel(N,basin_num,rng), above_thresh_bool(N,0), prefactor(1)
 {
     stats.assign(N, 0);
     for (vector<double>::iterator it = stats.begin(); it != stats.end(); ++it) {

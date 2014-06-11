@@ -26,8 +26,11 @@
 //#define MIXTURE
 #define MARKOV
 // Selects which basin model to use
+
+using namespace std;
+
 typedef TreeBasin BasinType;
-bool ret_train_logli = true;
+bool ret_train_logli = false;
 
 template <typename T>
 void writeOutputMatrix(int pos, vector<T> value, int N, int M, mxArray**& plhs) {
@@ -94,6 +97,8 @@ vector<double> mpow(const vector<double>& matrix, int n, int k) {
 void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
  // [freq,w,m,P,logli,prob] = EMBasins(st, unobserved_edges, binsize, nbasins, niter)
 
+  
+    
     cout << "Reading inputs..." << endl;
     int N = mxGetNumberOfElements(prhs[0]);
     vector<vector<double> > st (N);    
@@ -184,16 +189,16 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
             
             writeOutputMatrix(0, logli, niter, 1, plhs);
             writeOutputMatrix(1, basin_obj.get_trans(), nbasins, nbasins, plhs);
-//            writeOutputMatrix(2, P, nbasins, T, plhs);
-            writeOutputMatrix(2, basin_obj.emiss_prob(), nbasins, T, plhs);
+            writeOutputMatrix(2, P, nbasins, T, plhs);
+//            writeOutputMatrix(2, basin_obj.emiss_prob(), nbasins, T, plhs);
         //    cout << "Microstates..." << endl;
             writeOutputMatrix(3, alpha, T, 1, plhs);
             writeOutputMatrix(4, pred_prob, 1, pred_prob.size(), plhs);
             writeOutputMatrix(5, hist, 1, hist.size(), plhs);
             writeOutputStruct(6, params, plhs);
-            writeOutputMatrix(7, basin_obj.state_v_time(), 1, T, plhs);
+//            writeOutputMatrix(7, basin_obj.state_v_time(), 1, T, plhs);
             //cout << "Samples..." << endl;
-    /*
+    
             int nsamples = 100000;
             vector<char> sample = basin_obj.sample(nsamples);
             writeOutputMatrix(7, sample, N,nsamples, plhs);
@@ -204,7 +209,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
             writeOutputMatrix(8, samp_prob, 1, samp_prob.size(), plhs);
             writeOutputMatrix(9, samp_hist, 1, samp_prob.size(), plhs);
             
-            */
+    
            // writeOutputMatrix(7, basin_obj.word_list(), N, hist.size(), plhs);
         //    writeOutputMatrix(6, basin_obj.stationary_prob(), 1,nbasins, plhs);
 #endif
@@ -298,7 +303,7 @@ vector<int> RNG::randperm(int nmax) const {
 }
 
 template <class BasinT>
-EMBasins<BasinT>::EMBasins(int N, int nbasins) : N(N), nbasins(nbasins), w(nbasins) {
+EMBasins<BasinT>::EMBasins(int N, int nbasins) : w(nbasins), N(N), nbasins(nbasins) {
     rng = new RNG();
     srand(time(NULL));
     //srand(0);
@@ -306,7 +311,7 @@ EMBasins<BasinT>::EMBasins(int N, int nbasins) : N(N), nbasins(nbasins), w(nbasi
 
 
 template <class BasinT>
-EMBasins<BasinT>::EMBasins(vector<vector<double> >& st, vector<double> unobserved_l, vector<double> unobserved_u,double binsize, int nbasins) : N( st.size() ), nbasins(nbasins), nsamples(0), w(nbasins) {
+EMBasins<BasinT>::EMBasins(vector<vector<double> >& st, vector<double> unobserved_l, vector<double> unobserved_u,double binsize, int nbasins) : w(nbasins), N( st.size() ), nbasins(nbasins), nsamples(0) {
     
     rng = new RNG();
     srand(time(NULL));
@@ -454,7 +459,6 @@ State EMBasins<BasinT>::build_state(vector<char> word) const {
     for (int i=0; i<N; i++) {
         if (word[i]) {
             this_state.on_neurons.push_back(i);
-
         }
     }
     this_state.active_constraints = BasinT::get_active_constraints(this_state);
@@ -798,6 +802,8 @@ HMM<BasinT>::HMM(vector<vector<double> >& st, vector<double> unobserved_l, vecto
                             trans(this->T*nbasins,0),
                             w0 (nbasins) {}
 
+
+
 template <class BasinT>
 vector<int> HMM<BasinT>::state_v_time() const {
     vector<int> states (this->T,-1);
@@ -862,9 +868,9 @@ vector<double> HMM<BasinT>::train(int niter, bool ret_train_logli) {
         // 3. Main thread does M-step on basin params while worker thread updates trans
 
 
-        thread forward_trans_thread(HMM<BasinT>::forward_trans_thread_fun, this);
-        thread backward_thread(HMM<BasinT>::backward_thread_fun, this);
-        thread logli_thread(HMM<BasinT>::logli_thread_fun, this, &train_logli, ret_train_logli);
+        thread forward_trans_thread (HMM<BasinT>::forward_trans_thread_fun, this);
+        thread backward_thread (HMM<BasinT>::backward_thread_fun, this);
+        thread logli_thread (HMM<BasinT>::logli_thread_fun, this, &train_logli, ret_train_logli);
 
         update_emiss();
 
@@ -1369,17 +1375,20 @@ pair<vector<double>, vector<double> > HMM<BasinT>::pred_prob() const {
 //    this->test_states.clear();
     map<string,State> test_states;
     for (int t=0; t<this->T; t++) {
-        State this_state = this->state_obs(2,t);
-        vector<char> this_word = this_state.word;
-        string this_str (this_word.size(), '0');
-        for (int i=0; i<this_word.size(); i++) {
-            this_str[i] = this_word[i];
-        }
+        State this_state = this->state_obs(0,t);
+        if (this_state.identifier != -1) {
 
-        pair<state_iter, bool> ins = test_states.insert(pair<string,State> (this_str, this_state));
-        State& inserted_state = (ins.first)->second;
-        inserted_state.freq++;
-        
+            vector<char> this_word = this_state.word;
+            string this_str (this_word.size(), '0');
+            for (int i=0; i<this_word.size(); i++) {
+                this_str[i] = this_word[i];
+            }
+
+            pair<state_iter, bool> ins = test_states.insert(pair<string,State> (this_str, this_state));
+            State& inserted_state = (ins.first)->second;
+            inserted_state.freq++;
+
+        }
         /*
         if (this->state_list[t]) {
             State this_state = *(this->state_list[t]);

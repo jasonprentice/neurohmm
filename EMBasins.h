@@ -18,116 +18,101 @@
 #include <mutex>
 #include <condition_variable>
 
-using namespace std;
-
 
 // ************ RNG ***************
-class RNG
-{
+class RNG {
 public:
-    RNG();
-    ~RNG();
-    int discrete(const vector<double>&) const;
-    bool bernoulli(double) const;
-    double uniform() const;
-    vector<int> randperm(int) const;
+                            RNG();
+                            ~RNG();
+    int                     discrete( const std::vector<double>& ) const;
+    bool                    bernoulli( double ) const;
+    double                  uniform() const;
+    std::vector<int>             randperm( int ) const;
 private:
-    gsl_rng* rng_pr;
+    gsl_rng *               rng_pr;
 };
 
-struct State
-{
-    State() : freq(0), pred_prob(-1), identifier(-1) {};
+struct State {
+    std::vector<double>          P;
+    std::vector<double>          weight;
+    std::vector<int>             active_constraints;
+    std::vector<int>             on_neurons;
+    double                  freq;
+    double                  pred_prob;
+    std::vector<char>            word;
+    int                     identifier;
     
-    vector<int> active_constraints;
-    vector<int> on_neurons;
-    vector<double> P;
-    vector<double> weight;
-    double freq;
-    double pred_prob;
-
-    vector<char> word;
     
-    int identifier;
+                            State() :
+                                freq(0), pred_prob(-1), identifier(-1) {};
+    
+    
 };
 // *********************************
-typedef map<string,State>::iterator state_iter;
-typedef map<string,State>::const_iterator const_state_iter;
+typedef std::map<std::string,State>::iterator state_iter;
+typedef std::map<std::string,State>::const_iterator const_state_iter;
 
 // ************ Spike ***************
-struct Spike
-{
-    int bin;
-    int neuron_ind;
+struct Spike {
+    int                     bin;
+    int                     neuron_ind;
 };
 // *********************************
 // ************ SpikeComparison ***************
-class SpikeComparison
-{
+class SpikeComparison {
 public:
-    bool operator() (const Spike& lhs, const Spike& rhs) const
-    {
+    bool                    operator() ( const Spike& lhs, const Spike& rhs ) const {
         return (lhs.bin < rhs.bin);
     }
 };
 // *********************************
 
-//typedef priority_queue<Spike, vector<Spike>, SpikeComparison> SpikeHeap;
+//typedef priority_queue<Spike, std::vector<Spike>, SpikeComparison> SpikeHeap;
+
 
 // ************ EMBasins ***************
 class paramsStruct;
 
 template <class BasinT>
-class EMBasins
-{
+class EMBasins {
 public:
-    EMBasins(int N, int nbasins);
-    EMBasins(vector<vector<double> >& st, vector<double>, vector<double>, double binsize, int nbasins);
-    ~EMBasins();
+    std::vector<double>          w;       // 1 x nbasins
+    std::vector<double>          m;       // N x nbasins
     
-    vector<double> train(int, bool);
-//    vector<double> crossval(int niter, int k);      // k-fold cross-validation
-//    vector<double> test(const vector<vector<double> >& st, double binsize);
-    
-    int nstates() const {return train_states.size();};
-    vector<unsigned long> state_hist() const;
-//    vector<unsigned long> test_hist() const;
-    vector<double> all_prob() const;
-//    vector<double> test_prob() const;
-    vector<double> P() const;    
-    vector<paramsStruct> basin_params();
-    vector<char> sample(int);
-    vector<char> word_list();
-    
-    vector<double> w;       // 1 x nbasins
-    vector<double> m;       // N x nbasins
-    
-    //vector<double> test_logli;
-    
+                            EMBasins( int, int );
+                            EMBasins( std::vector<std::vector<double> >&, std::vector<double>, std::vector<double>, double, int );
+                            ~EMBasins();
+    std::vector<double>          train( int, bool );
+    std::vector<char>            word_list();
+    std::vector<unsigned long>   state_hist() const;
+    std::vector<double>          all_prob() const;
+    std::vector<double>          P() const;
+    std::vector<paramsStruct>    basin_params();
+    std::vector<char>            sample( int );
+    int                     nstates() const {
+                                return train_states.size(); };
 protected:
-    int nbasins, N, T;
-    double nsamples;
-    RNG* rng;
-    vector<BasinT> basins;
+    int                     N, nbasins, T;
+    double                  nsamples;
+    RNG *                   rng;
+    std::vector<BasinT>          basins;
     
-    vector<string> raster;
-    map<string, State> train_states;
-    vector<State*> state_list;
+    std::vector<std::string>          raster;
+    std::map<std::string, State>      train_states;
+    std::vector<State*>          state_list;
     
-    vector<Spike> sort_spikes(const vector<vector<double> >&, double) const;
-    State build_state(vector<char>) const;
-    State state_obs(int,int) const;
-    vector<double> emiss_obs(int,int) const;
-    double logli(bool) const;
+    std::vector<Spike>           sort_spikes( const std::vector<std::vector<double> >&, double ) const;
+    State                   build_state( std::vector<char> ) const;
+    State                   state_obs( int, int ) const;
+    std::vector<double>          emiss_obs( int, int ) const;
+    double                  logli( bool ) const;
 
 private:
-    void update_w();
-
-    void update_P();
-    
-    void initParams();
-    void Estep();
-    void Mstep();
+    void                    update_w();
+    void                    update_P();
+    void                    initParams();
+    void                    Estep();
+    void                    Mstep();
 
 };
 
@@ -135,54 +120,59 @@ private:
 
 // ************ HMM ***************
 template <class BasinT>
-class HMM : public EMBasins<BasinT>
-{
+class HMM : public EMBasins<BasinT> {
 public:
-    HMM(vector<vector<double> >& st, vector<double>, vector<double>, double binsize, int nbasins);
+                            HMM( std::vector<std::vector<double> >&, std::vector<double>, std::vector<double>, double, int );
     
-    vector<double> train(int, bool);
-    vector<int> viterbi(int) const;
-    vector<double> emiss_prob() const;
-    vector<double> get_forward() const;
-    vector<double> get_backward() const;
-    vector<double> get_P() const;
-    vector<double> get_trans() const;
-    vector<double> stationary_prob() const;
-    pair<vector<double>, vector<double> > pred_prob() const;
-    pair<vector<double>, vector<double> > sample_pred_prob(const vector<char>&) const;
-    vector<int> state_v_time() const;
+    std::vector<double>          train( int, bool );
+    std::vector<int>             viterbi( int ) const;
+    std::vector<double>          emiss_prob() const;
+    std::vector<double>          get_forward() const;
+    std::vector<double>          get_backward() const;
+    std::vector<double>          get_P() const;
+    std::vector<double>          get_trans() const;
+    std::vector<double>          stationary_prob() const;
+    std::pair<std::vector<double>,
+         std::vector<double> >   pred_prob() const;
+    std::pair<std::vector<double>,
+         std::vector<double> >   sample_pred_prob( const std::vector<char>& ) const;
+    std::vector<int>             state_v_time() const;
     
-    vector<char> sample(int) const;
-    vector<double> P_indep() const;
+    std::vector<char>            sample( int ) const;
+    std::vector<double>          P_indep() const;
 protected:
-    vector<double> forward;         // Forward filtering distribution
-    vector<double> backward;        // Backward filtering distribution
+    std::vector<double>          forward;         // Forward filtering distribution
+    std::vector<double>          backward;        // Backward filtering distribution
     
-    void update_forward();
-    void update_backward();
-    void update_P();
+    void                    update_forward();
+    void                    update_backward();
+    void                    update_P();
 
-    double logli(bool) const;
+    double                  logli( bool ) const;
 private:
-    vector<double> w0;
-    vector<double> trans;           // State transition probability matrix
+    std::vector<double>     trans;           // State transition probability matrix
+    std::vector<double>     w0;
+    bool                    emiss_updated,
+                            backward_updated,
+                            forward_updated;
+    std::condition_variable cv_emiss,
+                            cv_bkwd,
+                            cv_fwd;
+    std::mutex              emiss_flag_mtx,
+                            bkwd_flag_mtx,
+                            fwd_flag_mtx;
+
+    static void             forward_trans_thread_fun( HMM<BasinT> * );
+    static void             logli_thread_fun( HMM<BasinT> *, std::vector<double> *, bool );
+    static void             backward_thread_fun( HMM<BasinT> * );
+    std::pair<std::vector<double>,
+         std::vector<double> >   pred_prob_helper( const std::map<std::string,State>& ) const;
+    void                    update_emiss();
+    void                    update_trans();
+    void                    initParams();
+    void                    Estep();
+    void                    Mstep();
     
-    void update_emiss();
-    void update_trans();
-    
-    static void forward_trans_thread_fun(HMM<BasinT>*);
-    static void logli_thread_fun(HMM<BasinT>*,vector<double>*, bool);
-    static void backward_thread_fun(HMM<BasinT>*);
-    
-    pair<vector<double>, vector<double> > pred_prob_helper(const map<string,State>&) const;
-    
-    void initParams();
-    void Estep();
-    void Mstep();
-    
-    bool emiss_updated, backward_updated, forward_updated;
-    condition_variable cv_emiss, cv_bkwd, cv_fwd;
-    mutex emiss_flag_mtx, bkwd_flag_mtx, fwd_flag_mtx;
     
 
 };
@@ -194,12 +184,12 @@ template <class BasinT>
 class Autocorr : public HMM<BasinT>
 {
 public:
-    Autocorr(vector<vector<double> >& st, double binsize, int nbasins);
+    Autocorr(std::vector<std::vector<double> >& st, double binsize, int nbasins);
     ~Autocorr();
     
-    vector<double> train(int niter);
-    vector<int> viterbi();
-    vector<double> get_basin_trans();
+    std::vector<double> train(int niter);
+    std::vector<int> viterbi();
+    std::vector<double> get_basin_trans();
     
 private:
     
@@ -209,9 +199,9 @@ private:
     void update_w();
     void update_basin_trans_indep();
     
-    vector<double> trans_at_t(int);
+    std::vector<double> trans_at_t(int);
     
-    vector<double*> basin_trans;
+    std::vector<double*> basin_trans;
     double logli();
 };
 

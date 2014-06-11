@@ -19,8 +19,9 @@
 #include <queue>
 #include <set>
 
+using namespace std;
 
-TreeBasin::TreeBasin(int N, int basin_num, RNG* rng, double min) : BasinModel(N,basin_num,rng), G(N), adj_list(N) {
+TreeBasin::TreeBasin(int N, int basin_num, RNG* rng, double min) : BasinModel(N,basin_num,rng),adj_list(N), G(N) {
     // Initialize randomly
     // stats 0 to N-1 are <sigma_i>
     int nstats = (N%2==0) ? (N/2)*(N+1) : N*((N+1)/2);
@@ -275,7 +276,7 @@ vector<char> TreeBasin::sample() const {
     this_sample[0] = (rng->bernoulli(stats[0])) ? 1 : 0;
     while (!to_process.empty()) {
         int curr_node = to_process.front();
-        char sigma = this_sample[curr_node];
+        int sigma = this_sample[curr_node];
         for (vector<int>::const_iterator it=adj_list[curr_node].children.begin(); it!=adj_list[curr_node].children.end(); ++it) {
             int next_node = edge_list[*it].target;
             double p = edge_list[*it].cond_prob[1][sigma];
