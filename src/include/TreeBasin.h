@@ -9,13 +9,12 @@
 #ifndef _TreeBasin_h
 #define _TreeBasin_h
 
-#include "BasinModel.h"
-
+#include <vector>
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/property_map/property_map.hpp>
-#include <vector>
 
-class RNG; //Defined in EMBasins.h
+#include "BasinModel.h"
+
 
 // Define a graph type that associates a weight with each
 // edge. We store the weights using internal properties as described
