@@ -10,8 +10,6 @@
 
 #include "RNG.h"
 #include "BasinModel.h"
-#include "TreeBasin.h"
-#include "IndependentBasin.h"
 
 
 using namespace std;
@@ -94,13 +92,10 @@ vector<double> HMM<BasinT>::get_backward() const {
 }
 
 template <class BasinT>
-vector<double> HMM<BasinT>::train(int niter, bool ret_train_logli) {
+vector<double> HMM<BasinT>::train_model(int niter, bool ret_train_logli) {
     this->initParams();
     
     vector<double> train_logli;
-    
-    
-    
     
     cout << "Beginning train loop." << endl;
     
@@ -369,23 +364,19 @@ void HMM<BasinT>::update_backward() {
 
 template <class BasinT>
 void HMM<BasinT>::update_trans() {
-    // Update w0
+    
     double norm=0;
     for (int n=0; n<this->nbasins; n++) {
         w0[n] *= forward[n];
         norm += w0[n];
     }
-    
     for (int n=0; n<this->nbasins; n++) {
         w0[n] /= norm;
     }
     
-    // Update trans
     vector<double> num (this->nbasins*this->nbasins,0);
     vector<double> prob (this->nbasins*this->nbasins);
     for (int t=1; t<this->T; t++) {
-        //        State& this_state = this->train_states.at(words[t-1]);
-        
         double norm = 0;
         for (int n=0; n<this->nbasins; n++) {
             double tmp;
@@ -433,7 +424,6 @@ void HMM<BasinT>::update_P() {
     int nsamp = 0;
     vector<double>  this_P (this->nbasins,0);
     for (int t=0; t<this->T; t++) {
-        //        State& this_state = this->train_states.at(words[t]);
         if (this->state_list[t]) {
             State& this_state = *(this->state_list[t]);
             
@@ -545,11 +535,6 @@ vector<int> HMM<BasinT>::viterbi(int obs) const {
             int this_arg = 0;
             for (int m=0; m<this->nbasins; m++) {
                 double tmp = emiss[m] * trans[n*this->nbasins+m] * max[m];
-                //                if (state_list[t]) {
-                //                    tmp = (state_list[t]->P)[m] * trans[n*this->nbasins+m] * max[m];
-                //                } else {
-                //                    tmp = trans[n*this->nbasins+m] * max[m];
-                //                }
                 
                 if (tmp > this_max) {
                     this_max = tmp;
@@ -639,20 +624,6 @@ pair<vector<double>, vector<double> > HMM<BasinT>::pred_prob() const {
             inserted_state.freq++;
             
         }
-        /*
-         if (this->state_list[t]) {
-         State this_state = *(this->state_list[t]);
-         this_state.freq = 0;
-         vector<char> this_word = this_state.word;
-         string this_str (this_word.size(), '0');
-         for (int i=0; i<this_word.size(); i++) {
-         this_str[i] = this_word[i];
-         }
-         pair<map<string, State>::iterator, bool> ins = this->test_states.insert(pair<string,State> (this_str, this_state));
-         State& inserted_state = (ins.first)->second;
-         inserted_state.freq++;
-         }
-         */
     }
     
     return pred_prob_helper(test_states);

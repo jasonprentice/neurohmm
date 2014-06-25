@@ -29,8 +29,8 @@ IndependentBasin::IndependentBasin(int N, int basin_num, RNG* rng, double min) :
     
 }
 
-vector<int> IndependentBasin::get_active_constraints(const State& this_state) {
-    return this_state.on_neurons;
+vector<int> IndependentBasin::get_active_constraints(const state_t& this_state) {
+    return this_state.get_on_neurons();
 }
 
 
@@ -64,17 +64,17 @@ void IndependentBasin::update_thresh_list() {
     return;
 }
 
-double IndependentBasin::P_state(const State& this_state) const {
+double IndependentBasin::P_state(const state_t& this_state) const {
     
     double P = prefactor;
-    for (vector<int>::const_iterator neuron_iter = this_state.on_neurons.begin(); neuron_iter != this_state.on_neurons.end(); ++neuron_iter) {
+    for (vector<int>::const_iterator neuron_iter = this_state.get_on_neurons().begin(); neuron_iter != this_state.get_on_neurons().end(); ++neuron_iter) {
         if (above_thresh_bool[*neuron_iter] == 0) {
             P *= (m.at(*neuron_iter) / (1-m.at(*neuron_iter)));
         }
     }
     
     for (vector<int>::const_iterator thresh_iter=above_thresh_list.begin(); thresh_iter!=above_thresh_list.end(); ++thresh_iter) {
-        if (this_state.word[*thresh_iter]==1) {
+        if (this_state.get_word()[*thresh_iter]==1) {
             P *= m.at(*thresh_iter);
         } else {
             P *= (1 - m.at(*thresh_iter));
@@ -92,11 +92,12 @@ vector<char> IndependentBasin::sample() const {
     return this_sample;
 }
 
-paramsStruct IndependentBasin::get_params() {
+paramsStruct IndependentBasin::get_params() const {
     
     //    myMatrix m (stats, N, 1);
     paramsStruct params;
-    params.addField("m", m);
+    params.set("m",m);
+//    params.addField("m", m);
     return params;
     
 }

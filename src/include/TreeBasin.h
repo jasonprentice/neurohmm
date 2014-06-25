@@ -55,13 +55,16 @@ struct TreeNode {
 };
 
 class TreeBasin : public BasinModel {
+    
+typedef State<EMBasins<TreeBasin>::BasinData> state_t;
+
 public:
                                  TreeBasin( int, int, RNG * , double );
-    static std::vector<int>      get_active_constraints( const State& );
+    static std::vector<int>      get_active_constraints( const state_t& );
     void                         doMLE( double );
-    double                       P_state( const State& ) const;
+    double                       P_state( const state_t& ) const;
     std::vector<char>            sample() const;
-    paramsStruct                 get_params();
+    paramsStruct                 get_params() const;
 private:
     double                       P0;
     std::vector<TreeNode>        adj_list;

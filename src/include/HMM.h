@@ -23,7 +23,7 @@ class HMM : public EMBasins<BasinT> {
 public:
     HMM( std::vector<std::vector<double> >&, std::vector<double>, std::vector<double>, double, int );
     
-    std::vector<double>          train( int, bool );
+    std::vector<double>          train_model( int, bool );
     std::vector<int>             viterbi( int ) const;
     std::vector<double>          emiss_prob() const;
     std::vector<double>          get_forward() const;
@@ -32,9 +32,9 @@ public:
     std::vector<double>          get_trans() const;
     std::vector<double>          stationary_prob() const;
     std::pair<std::vector<double>,
-    std::vector<double> >   pred_prob() const;
+    std::vector<double> >        pred_prob() const;
     std::pair<std::vector<double>,
-    std::vector<double> >   sample_pred_prob( const std::vector<char>& ) const;
+    std::vector<double> >        sample_pred_prob( const std::vector<char>& ) const;
     std::vector<int>             state_v_time() const;
     
     std::vector<char>            sample( int ) const;
@@ -43,11 +43,11 @@ protected:
     std::vector<double>          forward;         // Forward filtering distribution
     std::vector<double>          backward;        // Backward filtering distribution
     
-    void                    update_forward();
-    void                    update_backward();
-    void                    update_P();
+    void                         update_forward();
+    void                         update_backward();
+    void                         update_P();
     
-    double                  logli( bool ) const;
+    double                       logli( bool ) const;
 private:
     std::vector<double>     trans;           // State transition probability matrix
     std::vector<double>     w0;
@@ -64,13 +64,14 @@ private:
     static void             forward_trans_thread_fun( HMM<BasinT> * );
     static void             logli_thread_fun( HMM<BasinT> *, std::vector<double> *, bool );
     static void             backward_thread_fun( HMM<BasinT> * );
-    std::pair<std::vector<double>,
-    std::vector<double> >   pred_prob_helper( const std::map<std::string,State>& ) const;
+
+    void                    initParams();
     void                    update_emiss();
     void                    update_trans();
-    void                    initParams();
     void                    Estep();
     void                    Mstep();
+    std::pair<std::vector<double>,
+    std::vector<double> >   pred_prob_helper( const std::map<std::string,State<BasinData> >& ) const;
 };
 // *********************************
 

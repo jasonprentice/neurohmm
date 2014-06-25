@@ -13,7 +13,7 @@
 
 using namespace std;
 
-// BasinModel
+
 void BasinModel::reset_stats() {
     norm = 0;
     for (vector<double>::iterator it=stats.begin(); it!=stats.end(); ++it) {
@@ -22,11 +22,12 @@ void BasinModel::reset_stats() {
     return;
 }
 
-void BasinModel::increment_stats(const State& this_state) {
+template <class BasinT>
+void BasinModel::increment_stats(const State<typename EMBasins<BasinT>::BasinData>& this_state) {
 //    double wt = this_state.freq * this_state.P[basin_num];
-    double wt = this_state.weight[basin_num];
+    double wt = this_state.aux_data.weight[basin_num];
     norm += wt;
-    for (vector<int>::const_iterator it=this_state.active_constraints.begin(); it!=this_state.active_constraints.end(); ++it) {
+    for (vector<int>::const_iterator it=this_state.aux_data.active_constraints.begin(); it!=this_state.aux_data.active_constraints.end(); ++it) {
         stats[*it] += wt;
     }
     return;

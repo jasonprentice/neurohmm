@@ -8,25 +8,26 @@
 
 #include <cmath>
 #include <iostream>
+#include <string>
 #include <vector>
 
 #include "matrix.h"
 #include "mex.h"
 
 #include "paramsStruct.h"
+#include "myMatrix.h"
 #include "HMM.h"
 #include "EMBasins.h"
+#include "TreeBasin.h"
+#include "IndependentBasin.h"
 
-//#define MIXTURE
-#define MARKOV
+#define MIXTURE
+//#define MARKOV
 
 using namespace std;
 
-class TreeBasin;
-class IndependentBasin;
-
 typedef TreeBasin BasinType;
-const bool ret_train_logli = false;
+const bool ret_train_logli = true;
 
 template <typename T>
 void writeOutputMatrix(int pos, vector<T> value, int N, int M, mxArray**& plhs) {
@@ -44,11 +45,15 @@ void writeOutputStruct(int pos, vector<paramsStruct>& value, mxArray**& plhs) {
     mxArray* out_struct = mxCreateStructMatrix(value.size(),1,value[0].get_nfields(), value[0].fieldNamesArray());
     int n = 0;
     for (vector<paramsStruct>::iterator it = value.begin(); it != value.end(); ++it) {
-        for (int i=0; i < it->get_nfields(); i++) {
-            vector<double>* data = it->getFieldData(i);
+        for (auto key_it = it->begin(); key_it != it->end(); ++it) {
+                
+            string key = *key_it;
+            myMatrix mat = it->get<myMatrix<double> >(key);
             
-            int N = it->getFieldN(i);
-            int M = it->getFieldM(i);
+            vector<double>* data = mat.data();            
+            int N = mat.get_N();
+            int M = mat.get_M();
+            
             mxArray* field_data = mxCreateDoubleMatrix(N, M, mxREAL);
             double* pr = mxGetPr(field_data);
             double* iter_pr = pr;
@@ -104,7 +109,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
             // Hidden Markov model
             cout << "Constructing HMM object" << endl;
             HMM<BasinType> basin_obj(st, unobserved_edges_low, unobserved_edges_high, binsize, nbasins);
-            vector<double> logli = basin_obj.train(niter, ret_train_logli);
+            vector<double> logli = basin_obj.train_model(niter, ret_train_logli);
 
             cout << "Viterbi..." << endl;
             vector<int> alpha = basin_obj.viterbi(2);
@@ -154,7 +159,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
                 
             cout << "Training model..." << endl;
 
-            vector<double> logli = basin_obj.train(niter, ret_train_logli);
+            vector<double> logli = basin_obj.train_model(niter, ret_train_logli);
             //vector<double> test_logli = basin_obj.test_logli;
             
         //    cout << "Testing..." << endl;

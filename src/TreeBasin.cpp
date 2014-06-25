@@ -60,19 +60,19 @@ TreeBasin::TreeBasin(int N, int basin_num, RNG* rng, double min) : BasinModel(N,
 }
 
 
-vector<int> TreeBasin::get_active_constraints(const State& this_state) {
+vector<int> TreeBasin::get_active_constraints(const state_t& this_state) {
     vector<int> cons;
     // Constraints 0 to N-1 are the sigma_i
-    for (vector<int>::const_iterator it=this_state.on_neurons.begin(); it!=this_state.on_neurons.end(); ++it) {
+    for (vector<int>::const_iterator it=this_state.get_on_neurons().begin(); it!=this_state.get_on_neurons().end(); ++it) {
         cons.push_back(*it);
     }
     
     // Constraints N to N(N-1)/2 are (sigma_i sigma_j); i<j
-    for (vector<int>::const_iterator it1=this_state.on_neurons.begin(); it1!=this_state.on_neurons.end(); ++it1) {
-        for (vector<int>::const_iterator it2=this_state.on_neurons.begin(); it2!=it1; ++it2) {
+    for (vector<int>::const_iterator it1=this_state.get_on_neurons().begin(); it1!=this_state.get_on_neurons().end(); ++it1) {
+        for (vector<int>::const_iterator it2=this_state.get_on_neurons().begin(); it2!=it1; ++it2) {
             int i = max(*it1, *it2);
             int j = min(*it1, *it2);
-            int N = this_state.word.size();
+            int N = this_state.get_word().size();
             int ix = (i%2==0) ? (i/2)*(i-1) : i*((i-1)/2);
             cons.push_back(N + ix + j);
         }
@@ -207,13 +207,13 @@ void TreeBasin::doMLE(double alpha) {
     return;
 }
 
-double TreeBasin::P_state(const State& this_state) const {
+double TreeBasin::P_state(const state_t& this_state) const {
 
 
     if (edge_list.empty()) {
         double P = 1;
         for (int i=0; i<N; i++) {
-            P *= (this_state.word[i]==0) ? 1-stats[i] : stats[i];
+            P *= (this_state.get_word()[i]==0) ? 1-stats[i] : stats[i];
         }
         return P;
     }
@@ -222,19 +222,19 @@ double TreeBasin::P_state(const State& this_state) const {
     // Factor due to root neuron
 //    for (int root_ix=0; root_ix < roots.size(); root_ix++) {
 //        P *= P0[root_ix];
-        P *= (this_state.word[0]==0) ? 1-stats[0] : stats[0];
+        P *= (this_state.get_word()[0]==0) ? 1-stats[0] : stats[0];
 //    }
     
     // Factor due to all edges with at least one spike.
-    for (vector<int>::const_iterator it=this_state.on_neurons.begin(); it!=this_state.on_neurons.end(); ++it) {
+    for (vector<int>::const_iterator it=this_state.get_on_neurons().begin(); it!=this_state.get_on_neurons().end(); ++it) {
         if (adj_list[*it].parent > -1) {  
             TreeEdgeProb parent = edge_list[adj_list[*it].parent];
-            int sigma = this_state.word[parent.source];
+            int sigma = this_state.get_word()[parent.source];
             P *= parent.factor[1][sigma];
         }
         for (vector<int>::const_iterator e = adj_list[*it].children.begin(); e!=adj_list[*it].children.end(); ++e) {
             TreeEdgeProb child = edge_list[*e];
-            int sigma = this_state.word[child.target];
+            int sigma = this_state.get_word()[child.target];
             if (sigma==0) {          // Prevent double-counting 11 edges
                 P *= child.factor[0][1];
             }
@@ -245,7 +245,7 @@ double TreeBasin::P_state(const State& this_state) const {
     for (vector<int>::const_iterator e=below_thresh_list.begin(); e!=below_thresh_list.end(); ++e)
     {
         TreeEdgeProb edge = edge_list[*e];
-        if (this_state.word[edge.source] == 0 && this_state.word[edge.target]==0) {
+        if (this_state.get_word()[edge.source] == 0 && this_state.get_word()[edge.target]==0) {
             P *= edge.factor[0][0];
         }
     }
@@ -289,7 +289,8 @@ vector<char> TreeBasin::sample() const {
     return this_sample;
 }
 
-paramsStruct TreeBasin::get_params() {
+paramsStruct TreeBasin::get_params() const {
+    myMatrix<double> m, J;
     vector<double> vec_m (N);
     for (int i=0; i<N; i++) {
         vec_m[i] = stats[i];
@@ -297,7 +298,7 @@ paramsStruct TreeBasin::get_params() {
     m.assign(vec_m, N,1);
     
     vector<double> vec_J (N*N, 0);
-    for (vector<TreeEdgeProb>::iterator it = edge_list.begin(); it!=edge_list.end(); ++it) {
+    for (vector<TreeEdgeProb>::const_iterator it = edge_list.begin(); it!=edge_list.end(); ++it) {
         if (it->cond_prob[1][1] > 0 && it->cond_prob[0][0] > 0 && it->cond_prob[1][0] > 0 && it->cond_prob[0][1] > 0) {
             double this_J = log((it->cond_prob[1][1] * it->cond_prob[0][0]) / (it->cond_prob[1][0] * it->cond_prob[0][1]));
             int i = it->source;
@@ -309,8 +310,8 @@ paramsStruct TreeBasin::get_params() {
     J.assign(vec_J,N,N);
     
     paramsStruct params;
-    params.addField("m",m);
-    params.addField("J",J);
+    params.set("m", m);
+    params.set("J", J);
     
     return params;
     
