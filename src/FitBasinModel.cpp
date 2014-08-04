@@ -25,7 +25,7 @@ using namespace std;
 class TreeBasin;
 class IndependentBasin;
 
-typedef TreeBasin BasinType;
+typedef IndependentBasin BasinType;
 const bool ret_train_logli = true;
 
 template <typename T>
