@@ -26,7 +26,7 @@ class TreeBasin;
 class IndependentBasin;
 
 typedef TreeBasin BasinType;
-const bool ret_train_logli = false;
+const bool ret_train_logli = true;
 
 template <typename T>
 void writeOutputMatrix(int pos, vector<T> value, int N, int M, mxArray**& plhs) {
@@ -119,7 +119,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
 
             cout << "Params..." << endl;
             vector<paramsStruct> params = basin_obj.basin_params();
-            
+    
             writeOutputMatrix(0, logli, niter, 1, plhs);
             writeOutputMatrix(1, basin_obj.get_trans(), nbasins, nbasins, plhs);
             writeOutputMatrix(2, P, nbasins, T, plhs);
@@ -129,9 +129,10 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
             writeOutputMatrix(4, pred_prob, 1, pred_prob.size(), plhs);
             writeOutputMatrix(5, hist, 1, hist.size(), plhs);
             writeOutputStruct(6, params, plhs);
-//            writeOutputMatrix(7, basin_obj.state_v_time(), 1, T, plhs);
+
+            writeOutputMatrix(7, basin_obj.state_v_time(), 1, T, plhs);
             //cout << "Samples..." << endl;
-    
+    /*
             int nsamples = 100000;
             vector<char> sample = basin_obj.sample(nsamples);
             writeOutputMatrix(7, sample, N,nsamples, plhs);
@@ -142,8 +143,11 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
             writeOutputMatrix(8, samp_prob, 1, samp_prob.size(), plhs);
             writeOutputMatrix(9, samp_hist, 1, samp_prob.size(), plhs);
             
+     
+    */
+            vector<char> wordlist = basin_obj.word_list();
     
-           // writeOutputMatrix(7, basin_obj.word_list(), N, hist.size(), plhs);
+            writeOutputMatrix(8, wordlist, N, floor(wordlist.size() / N), plhs);
         //    writeOutputMatrix(6, basin_obj.stationary_prob(), 1,nbasins, plhs);
 #endif
 #ifdef MIXTURE
