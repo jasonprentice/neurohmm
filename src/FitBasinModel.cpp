@@ -71,6 +71,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     
     cout << "Reading inputs..." << endl;
     int N = mxGetNumberOfElements(prhs[0]);
+    cout << N << endl;
     vector<vector<double> > st (N);    
     for (int i=0; i<N; i++) {
         mxArray* elem = mxGetCell(prhs[0], i);
