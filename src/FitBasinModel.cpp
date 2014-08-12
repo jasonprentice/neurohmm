@@ -17,8 +17,8 @@
 #include "HMM.h"
 #include "EMBasins.h"
 
-//#define MIXTURE
-#define MARKOV
+#define MIXTURE
+//#define MARKOV
 
 using namespace std;
 
@@ -173,13 +173,13 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
             int nsamples = 100000;
             vector<char> samples = basin_obj.sample(nsamples);
 
-
-            cout << "Writing outputs..." << endl;    
+            cout << "Writing outputs..." << endl;
             
             writeOutputMatrix(0, basin_obj.w, nbasins,1, plhs);    
             writeOutputStruct(1, params, plhs);
-        //    writeOutputMatrix(2, basin_obj.word_list(), N, nstates, plhs);
-            writeOutputMatrix(2, samples, N, nsamples, plhs);
+
+            writeOutputMatrix(2, basin_obj.word_list(), N, nstates, plhs);
+        //    writeOutputMatrix(2, samples, N, nsamples, plhs);
             writeOutputMatrix(3, basin_obj.state_hist(), nstates, 1, plhs);
             writeOutputMatrix(4, basin_obj.P(), nbasins, nstates, plhs);
             writeOutputMatrix(5, basin_obj.all_prob(), nstates, 1, plhs);
