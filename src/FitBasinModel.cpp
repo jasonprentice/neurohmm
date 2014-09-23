@@ -21,8 +21,8 @@
 #include "TreeBasin.h"
 #include "IndependentBasin.h"
 
-#define MIXTURE
-//#define MARKOV
+//#define MIXTURE
+#define MARKOV
 
 using namespace std;
 
