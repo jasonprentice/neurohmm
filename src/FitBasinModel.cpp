@@ -17,8 +17,8 @@
 #include "HMM.h"
 #include "EMBasins.h"
 
-#define MIXTURE
-//#define MARKOV
+//#define MIXTURE
+#define MARKOV
 
 using namespace std;
 
@@ -133,7 +133,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
 
             writeOutputMatrix(7, basin_obj.state_v_time(), 1, T, plhs);
             //cout << "Samples..." << endl;
-    /*
+    
             int nsamples = 100000;
             vector<char> sample = basin_obj.sample(nsamples);
             writeOutputMatrix(7, sample, N,nsamples, plhs);
@@ -142,13 +142,13 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
             vector<double> samp_prob = tmp_samp.first;
             vector<double> samp_hist = tmp_samp.second;
             writeOutputMatrix(8, samp_prob, 1, samp_prob.size(), plhs);
-            writeOutputMatrix(9, samp_hist, 1, samp_prob.size(), plhs);
+         //   writeOutputMatrix(9, samp_hist, 1, samp_prob.size(), plhs);
             
      
-    */
-            vector<char> wordlist = basin_obj.word_list();
     
-            writeOutputMatrix(8, wordlist, N, floor(wordlist.size() / N), plhs);
+       //     vector<char> wordlist = basin_obj.word_list();
+    
+    //        writeOutputMatrix(8, wordlist, N, floor(wordlist.size() / N), plhs);
         //    writeOutputMatrix(6, basin_obj.stationary_prob(), 1,nbasins, plhs);
 #endif
 #ifdef MIXTURE
